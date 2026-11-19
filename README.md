@@ -5,9 +5,13 @@ diagnoses problems and proposes fixes you can copy-paste. This kit is the saniti
 shareable base of my own setup: a dark NOC-style dashboard, an outage log, and the
 n8n workflows behind the morning report.
 
-It is a **reference and a starting point, not a plug-and-play product**. Your hardware
-is different, so you will adapt it — the easiest way is to do that with Claude, step by
-step (see `2_PROMPT_FOR_CLAUDE.txt`).
+> **It's a recipe, not an installer.** You don't install this — you cook it, with Claude
+> as your sous-chef. Bring your own ingredients (your hardware, your firewall, your NAS,
+> your network), follow along at your own pace, and season it to taste. The result is
+> *your* dashboard, not a copy of mine.
+
+So treat it as a reference and a starting point, not a plug-and-play product. The easiest
+way to adapt it is with Claude, step by step — see `2_PROMPT_FOR_CLAUDE.txt`.
 
 > No keys, passwords, real IP addresses or domains are in this repository.
 > Addresses shown are examples (`192.168.100.x`), and secrets are marked `A_REMPLIR`
