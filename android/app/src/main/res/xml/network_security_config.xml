@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <!-- Plain http (no TLS) is allowed only for the local addresses listed here.
+         Put YOUR dashboard address (and any other local host the pages load from). -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">192.168.1.30</domain>
+    </domain-config>
+</network-security-config>

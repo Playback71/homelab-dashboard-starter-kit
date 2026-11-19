@@ -1,0 +1,18 @@
+# Android / Android Studio
+*.iml
+.gradle/
+/local.properties
+.idea/
+/build
+/app/build
+/captures
+.externalNativeBuild
+.cxx/
+.DS_Store
+
+# Build outputs and signing — never commit these
+*.apk
+*.aab
+*.keystore
+*.jks
+keystore.properties

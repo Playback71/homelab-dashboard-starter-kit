@@ -46,6 +46,7 @@ n8n/                           the 6 n8n workflows, cleaned
    Statut_tunnels_et_VPN.json      tunnels and firewall gateways status
    Rapport-matin.json              serves the latest report to the dashboard
    Alertes_temps_reel.json         phone notifications
+android/                       optional Android app (WebView) — see android/README.md
 ```
 
 In the workflows: `A_REMPLIR` = a key/token/password was removed;
@@ -59,6 +60,13 @@ comments inside the workflows are in French; Claude can translate or explain the
 2. The fastest way to adapt it to your own hardware is with Claude: fill in
    `1_FILL_IN_FIRST.txt`, paste `2_PROMPT_FOR_CLAUDE.txt` into a Claude Project, and go
    one page at a time.
+
+## Android app (optional)
+
+The `android/` folder holds a tiny Android app that opens the dashboard full-screen in a
+WebView, so it gets a home-screen icon. It's optional — the dashboard works in any phone
+browser. Open the folder in Android Studio, change one line (your dashboard address),
+and build your own APK. See `android/README.md`.
 
 ## Security
 
