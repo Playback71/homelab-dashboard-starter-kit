@@ -68,6 +68,15 @@ comments inside the workflows are in French; Claude can translate or explain the
   (WireGuard) for remote access.
 - Before sharing any n8n export, remove keys, tokens, passwords, addresses and domains.
 
+### Optional — firewall auto-blocklist
+
+The `check_pfsense_logs` node can read the firewall logs and, if you turn it on, add
+abusive IPs to a pfSense block list automatically. It's handy but **not required**, and
+it ships in "simulation" mode — it only proposes, it writes nothing — until you decide
+otherwise. If you'd rather nothing ever touches your firewall, just remove that node and
+the rest of the kit keeps working. Firewalls also differ from brand to brand (this kit
+uses pfSense), so this is one of the parts you'll adapt to your own gear.
+
 ## Credits
 
 Built by **Playback71** for the MY HOMELAB project, with the help of Claude (Anthropic).
