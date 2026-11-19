@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<!-- proxmox.html : v2026.11.17-1 : English version (MY HOMELAB starter kit). Proxmox page: nodes, disks health, backups, VMs and containers, recent operations -->
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Proxmox HomeLab</title>
+
+<link rel="stylesheet" href="./css/style.css">
+
+<link rel="stylesheet"
+href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+
+<style>
+.vm-status{display:flex;align-items:center;gap:10px;font-weight:bold;}
+.dot{height:14px;width:14px;border-radius:50%;display:inline-block;}
+.online-dot{background:#00ff88;box-shadow:0 0 15px #00ff88;}
+.warning-dot{background:#ffc107;box-shadow:0 0 15px #ffc107;}
+.offline-dot{background:#ff4d4d;box-shadow:0 0 15px #ff4d4d;}
+
+.progress{height:12px;background:#111;border-radius:10px;overflow:hidden;margin-top:10px;}
+.progress span{height:100%;display:block;background:linear-gradient(90deg,#00eaff,#00ff88);}
+.progress span.warn{background:#ffc107;}
+.progress span.crit{background:#ff4d4d;}
+
+.online.degraded{color:#ffc107;}
+.online.down{color:#ff4d4d;}
+.updated{text-align:center;font-size:1rem;margin:20px 0;}
+.activity p{font-size:1rem;}
+</style>
+
+<style id="zoom-mobile">@media (max-width:900px){html{zoom:0.9}}</style>
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+</head>
+
+
+
+<body class="compact-cards">
+
+<div class="background"></div>
+<div class="overlay"></div>
+
+
+<header>
+
+<div class="logo">
+<i class="fa-solid fa-layer-group"></i>
+PROXMOX LAB
+</div>
+
+<nav>
+
+<a href="/index.html">
+<i class="fa-solid fa-gauge"></i>
+Dashboard
+</a>
+
+
+<a href="/documentation.html">
+<i class="fa-solid fa-book"></i>
+Documentation
+</a>
+
+<a href="/journal.html">
+<i class="fa-solid fa-clock-rotate-left"></i>
+Journal
+</a>
+
+<a href="/reseau.html">
+<i class="fa-solid fa-network-wired"></i>
+Network
+</a>
+
+<a href="/supervision.html">
+<i class="fa-solid fa-eye"></i>
+Supervision
+</a>
+
+<a class="active" href="/proxmox.html">
+<i class="fa-solid fa-layer-group"></i>
+Proxmox
+</a>
+        <a href="/pfsense.html"><i class="fa-solid fa-shield-halved"></i> pfSense</a>
+
+</nav>
+
+<div class="time">
+<i class="fa-regular fa-clock"></i>
+<span id="clock">00:00:00</span>
+</div>
+
+</header>
+
+
+<main>
+
+<section class="hero">
+
+<h1>PROXMOX VIRTUALIZATION CENTER</h1>
+
+<p>HomeLab virtual cluster</p>
+
+<div class="online" id="clusterStatus">
+<i class="fa-solid fa-circle"></i>
+<span>Connecting to the nodes...</span>
+</div>
+
+</section>
+
+
+<div id="nodes"></div>
+
+
+<section class="panel">
+
+<h2>
+<i class="fa-solid fa-desktop"></i>
+Virtual machines and containers
+</h2>
+
+<section class="cards" id="guests"></section>
+
+</section>
+
+
+<section class="panel">
+
+<h2>
+<i class="fa-solid fa-clock-rotate-left"></i>
+Latest operations
+</h2>
+
+<div class="activity" id="tasks"></div>
+
+</section>
+
+
+<p class="updated" id="updated"></p>
+
+</main>
+
+
+<footer>
+MY HOMELAB © 2026
+</footer>
+
+
+<script>
+/* One endpoint per node: Nginx relays /pve/<key>/ to the node API */
+const NODES = [
+  { key: 'proxmox1', label: 'PROXMOX 1', model: 'Dell OptiPlex 7060' },
+  { key: 'proxmox2', label: 'PROXMOX 2', model: 'Dell Precision T1700' }
+];
+const BASE = '/pve/';
+const REFRESH_MS = 15000;
+
+const TASK_LABELS = {
+  qmstart: 'VM start', qmstop: 'VM stop', qmshutdown: 'VM shutdown',
+  qmreboot: 'VM reboot', qmsnapshot: 'VM snapshot', qmrollback: 'VM rollback',
+  qmclone: 'VM clone', qmigrate: 'VM migration', qmcreate: 'VM creation',
+  vzstart: 'CT start', vzstop: 'CT stop', vzshutdown: 'CT shutdown',
+  vzreboot: 'CT reboot', vzdump: 'Backup', vncproxy: 'Console',
+  vncshell: 'Shell', aptupdate: 'Package update', srvreload: 'Service reload',
+  imgcopy: 'Disk copy', download: 'Download', zfscreate: 'ZFS creation'
+};
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const gb = b => (b / 1073741824).toFixed(1);
+const pct = (a, b) => b ? Math.round(a / b * 100) : 0;
+const level = p => p >= 90 ? 'crit' : p >= 75 ? 'warn' : '';
+const uptime = s => Math.floor(s / 86400) + ' j ' + Math.floor(s % 86400 / 3600) + ' h';
+
+async function api(key, path) {
+  const r = await fetch(BASE + key + '/' + path, { cache: 'no-store' });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return (await r.json()).data;
+}
+
+function gauge(icon, title, p, detail) {
+  return '<div class="card"><i class="fa-solid ' + icon + '"></i><h2>' + esc(title) + '</h2>' +
+    '<div class="number">' + p + '%</div>' +
+    '<div class="progress"><span class="' + level(p) + '" style="width:' + p + '%"></span></div>' +
+    (detail ? '<p>' + esc(detail) + '</p>' : '') + '</div>';
+}
+
+function nodeBlock(r) {
+  const head = '<section class="panel"><h2><i class="fa-solid fa-server"></i> ' + esc(r.cfg.label) + '</h2><section class="cards">';
+  if (!r.ok) {
+    return head + '<div class="card"><i class="fa-solid fa-server"></i><h2>' + esc(r.cfg.key) + '</h2>' +
+      '<div class="vm-status"><span class="dot offline-dot"></span>UNREACHABLE</div>' +
+      '<p>' + esc(r.cfg.model) + '</p></div></section></section>';
+  }
+  const n = r.node;
+  const cpu = Math.round(n.cpu * 100);
+  const ram = pct(n.mem, n.maxmem);
+  const all = r.res.filter(x => x.type === 'storage' && x.node === n.node);
+  const local = all.filter(x => !x.shared && /images|rootdir/.test(x.content || ''));
+  const st = (local.length ? local : all).sort((a, b) => b.maxdisk - a.maxdisk)[0];
+  const sp = st ? pct(st.disk, st.maxdisk) : pct(n.disk, n.maxdisk);
+  const stName = st ? st.storage : 'disque';
+  const stDetail = st ? gb(st.disk) + ' / ' + gb(st.maxdisk) + ' GB' : gb(n.disk) + ' / ' + gb(n.maxdisk) + ' GB';
+
+  const nodeCard = '<div class="card"><i class="fa-solid fa-server"></i><h2>' + esc(n.node) + '</h2>' +
+    '<div class="vm-status"><span class="dot online-dot"></span>ONLINE</div>' +
+    '<p>' + esc(r.cfg.model) + '</p><p>Uptime: ' + uptime(n.uptime) + '</p></div>';
+
+  return head + nodeCard +
+    gauge('fa-microchip', 'CPU', cpu, n.maxcpu + ' cores') +
+    gauge('fa-memory', 'RAM', ram, gb(n.mem) + ' / ' + gb(n.maxmem) + ' GB') +
+    gauge('fa-hard-drive', 'STORAGE ' + stName, sp, stDetail) +
+    disquesCard(r.sante) + sauvegardesCard(r.sante) +
+    '</section></section>';
+}
+
+/* ---- Disks health and backups (read every 5 min: disks/list runs smartctl) ---- */
+const SANTE_MS = 300000;
+const SAUVEGARDE_MAX_JOURS = 8;   // no successful backup for longer than this = to check
+const VIE_MIN = 20;               // % of life left on an SSD (Wearout column)
+// SSD WD Blue SA510 / 3D (WDS…2B0A): the firmware gives the wear instead of the life left, so it is inverted
+const SSD_USURE_INVERSEE = /WDS\d+[GT]2B0A/i;
+const vieRestante = d => (typeof d.wearout !== 'number') ? null : (SSD_USURE_INVERSEE.test(String(d.model || '')) ? 100 - d.wearout : d.wearout);
+const santeCache = {};
+const quand = sec => new Date(sec * 1000).toLocaleString('en-CA', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+async function lireSante(cfg, node) {
+  const c = santeCache[cfg.key];
+  if (c && Date.now() - c.t < SANTE_MS) return c;
+  const v = { t: Date.now() };
+  try { v.disks = await api(cfg.key, 'nodes/' + node + '/disks/list'); } catch (e) { v.errD = e.message; }
+  try { v.backups = await api(cfg.key, 'nodes/' + node + '/tasks?typefilter=vzdump&limit=50'); } catch (e) { v.errB = e.message; }
+  santeCache[cfg.key] = v;
+  return v;
+}
+
+function etatCard(icon, titre, dot, texte, lignes) {
+  return '<div class="card"><i class="fa-solid ' + icon + '"></i><h2>' + esc(titre) + '</h2>' +
+    '<div class="vm-status" style="justify-content:center"><span class="dot ' + dot + '"></span>' + esc(texte) + '</div>' +
+    lignes.map(l => '<p>' + esc(l) + '</p>').join('') + '</div>';
+}
+
+function disquesCard(sa) {
+  if (!sa || !sa.disks) return etatCard('fa-hard-drive', 'DISKS', 'warning-dot', 'NOT READ', [sa && sa.errD ? 'Access denied or error: ' + sa.errD : 'Loading…']);
+  let niveau = 'ok';
+  const lignes = sa.disks.map(d => {
+    const h = String(d.health || '?').toUpperCase();
+    const v = vieRestante(d);
+    const vie = v !== null ? ' · life ' + v + ' %' : '';
+    if (h && !['PASSED', 'OK', 'UNKNOWN', '?'].includes(h)) niveau = 'crit';
+    else if (v !== null && v < VIE_MIN && niveau !== 'crit') niveau = 'warn';
+    return String(d.devpath).replace('/dev/', '') + ' · ' + (d.model || '?') + ' · ' + h + vie;
+  });
+  const dot = niveau === 'crit' ? 'offline-dot' : niveau === 'warn' ? 'warning-dot' : 'online-dot';
+  const txt = niveau === 'crit' ? 'FAILING' : niveau === 'warn' ? 'TO WATCH' : sa.disks.length + ' HEALTHY';
+  return etatCard('fa-hard-drive', 'DISKS', dot, txt, lignes.length ? lignes.slice(0, 4) : ['No disk found']);
+}
+
+function sauvegardesCard(sa) {
+  if (!sa || !sa.backups) return etatCard('fa-clock-rotate-left', 'BACKUPS', 'warning-dot', 'NOT READ', [sa && sa.errB ? 'Error: ' + sa.errB : 'Loading…']);
+  const t = sa.backups.filter(x => x.status).sort((a, b) => b.starttime - a.starttime);
+  if (!t.length) return etatCard('fa-clock-rotate-left', 'BACKUPS', 'warning-dot', 'NONE', ["No backup in the history"]);
+  const der = t[0];
+  const ok = t.find(x => x.status === 'OK');
+  const age = ok ? Math.floor((Date.now() / 1000 - ok.starttime) / 86400) : null;
+  const echecs = t.filter(x => x.status !== 'OK' && Date.now() / 1000 - x.starttime < 7 * 86400).length;
+  let dot = 'online-dot', txt = 'OK';
+  if (der.status !== 'OK') { dot = 'offline-dot'; txt = 'FAILED'; }
+  else if (!ok || age > SAUVEGARDE_MAX_JOURS) { dot = 'warning-dot'; txt = 'ANCIENNE'; }
+  const lignes = ['Last: ' + quand(der.starttime) + (der.id ? ' (' + der.id + ')' : '') + (der.status !== 'OK' ? ' — ' + der.status : '')];
+  if (der.status !== 'OK' || der !== ok) lignes.push(ok ? 'Last successful: ' + quand(ok.starttime) : 'None successful');
+  lignes.push('Failures over 7 days: ' + echecs);
+  return etatCard('fa-clock-rotate-left', 'BACKUPS', dot, txt, lignes);
+}
+
+function guestCard(g) {
+  const isVm = g.type === 'qemu';
+  const running = g.status === 'running';
+  const dot = running ? 'online-dot' : g.status === 'stopped' ? 'offline-dot' : 'warning-dot';
+  const txt = running ? 'RUNNING' : g.status === 'stopped' ? 'STOPPED' : String(g.status).toUpperCase();
+  let live = '';
+  if (running) {
+    live = '<p>CPU: ' + Math.round(g.cpu * 100) + '% — RAM: ' + pct(g.mem, g.maxmem) + '%</p>';
+  }
+  return '<div class="card"><i class="fa-solid ' + (isVm ? 'fa-desktop' : 'fa-box') + '"></i>' +
+    '<h2>' + esc(g.name || g.id) + '</h2>' +
+    '<p>' + (isVm ? 'VM ' : 'CT ') + g.vmid + ' sur ' + esc(g.node) + '</p>' +
+    '<p>' + g.maxcpu + ' CPU</p><p>' + gb(g.maxmem) + ' Go RAM</p>' + live +
+    '<div class="vm-status"><span class="dot ' + dot + '"></span>' + txt + '</div></div>';
+}
+
+function taskLine(t) {
+  const ok = t.status === 'OK';
+  const running = t.status === undefined;
+  const mark = running ? '⏳' : ok ? '✔' : '✖';
+  const label = TASK_LABELS[t.type] || t.type;
+  const target = t.id ? ' ' + t.id : '';
+  const when = new Date(t.starttime * 1000).toLocaleString('en-CA', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const err = (!ok && !running) ? ' — ' + t.status : '';
+  return '<p>' + mark + ' ' + esc(label + target) + ' (' + esc(t.src) + ') — ' + esc(when + err) + '</p>';
+}
+
+async function load() {
+  const results = await Promise.all(NODES.map(async cfg => {
+    try {
+      const res = await api(cfg.key, 'cluster/resources');
+      const node = res.find(r => r.type === 'node');
+      if (!node) throw new Error('node not found');
+      let tasks = [];
+      try {
+        tasks = (await api(cfg.key, 'nodes/' + node.node + '/tasks?limit=6')).map(t => Object.assign({ src: node.node }, t));
+      } catch (e) { /* tasks are optional */ }
+      const sante = await lireSante(cfg, node.node);
+      return { cfg, res, node, tasks, sante, ok: true };
+    } catch (e) {
+      return { cfg, ok: false };
+    }
+  }));
+
+  const up = results.filter(r => r.ok).length;
+  const st = $('clusterStatus');
+  st.className = 'online' + (up === results.length ? '' : up === 0 ? ' down' : ' degraded');
+  st.querySelector('span').textContent = up === results.length
+    ? 'Cluster operational — ' + up + ' nodes online'
+    : up === 0 ? 'No node reachable' : up + ' of ' + results.length + ' nodes online';
+
+  $('nodes').innerHTML = results.map(nodeBlock).join('');
+
+  const guests = [];
+  results.filter(r => r.ok).forEach(r => {
+    r.res.filter(x => (x.type === 'qemu' || x.type === 'lxc') && !x.template && x.node === r.node.node)
+      .forEach(x => guests.push(x));
+  });
+  guests.sort((a, b) => a.node.localeCompare(b.node) || a.vmid - b.vmid);
+  $('guests').innerHTML = guests.length ? guests.map(guestCard).join('') : '<p>No machine found.</p>';
+
+  const tasks = results.flatMap(r => r.tasks || []).sort((a, b) => b.starttime - a.starttime).slice(0, 8);
+  $('tasks').innerHTML = tasks.length ? tasks.map(taskLine).join('') : '<p>No recent operation.</p>';
+
+  $('updated').textContent = 'Last update: ' + new Date().toLocaleTimeString('en-CA');
+}
+
+load();
+setInterval(load, REFRESH_MS);
+</script>
+
+<script src="./js/clock.js"></script>
+<script src="./js/fit-page.js"></script>
+</body>
+
+</html>

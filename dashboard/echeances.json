@@ -1,0 +1,53 @@
+{
+ "_aide": "Help (the field names stay in French, the page reads them): file edited by hand. Dates as YYYY-MM-DD. echeances (deadlines): WARN when alerte_jours days or fewer are left, CRIT at 7 days or fewer and once passed. restaurations (restore tests): put today's date in dernier_test after each successful test; WARN if never tested (null) or if the last test is older than max_jours. nom = name, comment = how to do the test.",
+ "echeances": [
+  {
+   "nom": "Domain example.com",
+   "type": "Domain",
+   "date": "2027-01-16",
+   "alerte_jours": 45,
+   "action": "Cloudflare, Domain Registration, Manage Domains, example.com: check that Auto-Renew is on and the payment card is valid (otherwise renew by hand)."
+  },
+  {
+   "nom": "pfSense certificate (web interface)",
+   "type": "Certificate",
+   "date": "2027-04-21",
+   "alerte_jours": 30,
+   "action": "pfSense, System, Cert. Manager, Certificates: renew the GUI certificate (Renew), then check System, Advanced, Admin Access."
+  },
+  {
+   "nom": "Certificate UNVR",
+   "type": "Certificate",
+   "date": "2027-12-08",
+   "alerte_jours": 30,
+   "action": "The certificate is managed by UniFi OS: update UniFi OS or restart the console, then read the date again."
+  },
+  {
+   "nom": "Certificate CloudKey+",
+   "type": "Certificate",
+   "date": "2028-02-22",
+   "alerte_jours": 30,
+   "action": "The certificate is managed by UniFi OS: update UniFi OS or restart the console, then read the date again."
+  }
+ ],
+ "restaurations": [
+  {
+   "nom": "Hyper Backup (file)",
+   "dernier_test": "2026-11-12",
+   "max_jours": 90,
+   "comment": "DSM, Hyper Backup, task Synology Share Folder, Backup Explorer: pick a file, then Copy to (or Download) to get it elsewhere without touching the original; open it to check, then delete the copy. The Restore button replaces the file at its original location."
+  },
+  {
+   "nom": "Active Backup (Dashboard file)",
+   "dernier_test": "2026-11-13",
+   "max_jours": 90,
+   "comment": "DSM, Active Backup for Business, File Server, Backup-Dashboard, Restore: restore index.html to a test folder and compare with the original."
+  },
+  {
+   "nom": "Proxmox (full CT)",
+   "dernier_test": "2026-11-13",
+   "max_jours": 180,
+   "comment": "Proxmox, backup storage, Backups: pick a backup of a small CT, Restore with a new ID (e.g. 999) and Unique checked, start it without network, check, then delete CT 999."
+  }
+ ]
+}

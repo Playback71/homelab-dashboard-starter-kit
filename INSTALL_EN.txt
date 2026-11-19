@@ -1,0 +1,172 @@
+MY HOMELAB - STARTER KIT : INSTALLATION GUIDE
+==============================================
+Version: v2026.11.17-2
+
+This kit comes from a working homelab: a home-made dashboard plus a morning report written
+by a local AI that diagnoses problems and proposes fixes with copy-paste commands.
+It is a REFERENCE, not a plug-and-play product: your hardware is different, so you will
+adapt it. The easiest way is to do it with Claude (see step 2).
+
+
+WHAT IS IN THE PACKAGE
+----------------------
+  INSTALL_EN.txt                 this guide
+  1_FILL_IN_FIRST.txt            questions about your setup, to fill in
+  2_PROMPT_FOR_CLAUDE.txt        instructions for Claude (paste them in a Claude Project)
+  n8n/                           the 6 n8n workflows of the original homelab, cleaned
+     Verifier_system.json            the morning report (32 nodes)
+     Kuma_Statut_resume.json         Uptime Kuma summary, called by Verifier system
+     Journal_des_pannes.json         outage log, 30 days
+     Statut_tunnels_et_VPN.json      Cloudflare tunnels and firewall gateways status
+     Rapport-matin.json              serves the latest report to the dashboard
+     Alertes_temps_reel.json         phone notifications (Home Assistant app)
+  dashboard/                     the 7 dashboard web pages of the original homelab, in English
+     README_DASHBOARD.txt            what each page shows, the relays, what to change first
+     nginx-example/default.conf      example Nginx config with all the relays (no keys)
+
+In the workflows:
+  A_REMPLIR                          = a key, token or password was removed ("to fill in")
+  IP_PRIVEE_n, PORT_n, DOMAINE_n     = an address, port or domain was hidden
+The comments and texts inside the workflows are in French; Claude can translate or explain them.
+
+
+WHAT YOU NEED
+-------------
+- One Linux machine or VM that stays on (Debian or Ubuntu), 4 GB RAM or more, with Docker.
+  It will run n8n, Uptime Kuma and the dashboard web server. A Proxmox VM or LXC is fine.
+- For the local AI: a PC with an NVIDIA GPU, ideally 12 GB of VRAM (8 GB works with a smaller
+  model). The original setup uses an RTX 3060 12 GB.
+- The devices you want to monitor must have an API or a way to read their status
+  (firewall, NAS, hypervisor, switches, home automation...).
+- Basic comfort with a Linux terminal and copy-paste.
+
+
+STEP 1 - ORDER OF WORK (do not install everything at once)
+----------------------------------------------------------
+  1. Docker
+  2. Uptime Kuma          (is everything up?)          -> useful on day one
+  3. A simple dashboard page served by Nginx
+  4. Glances on each server (live CPU, RAM, disks)
+  5. n8n with 2 or 3 checks, then add more
+  6. Ollama + the AI part of the morning report
+  7. Optional: Loki + Grafana + Alloy for firewall logs, WireGuard for phone access
+Test each step before the next one.
+
+
+STEP 2 - SET UP CLAUDE FIRST (recommended)
+------------------------------------------
+1. In Claude, create a Project (for example "Homelab Dashboard").
+   Every conversation about the dashboard then stays in one place, and Claude keeps the context.
+2. Fill in 1_FILL_IN_FIRST.txt, then add it to the Project files.
+3. Paste the content of 2_PROMPT_FOR_CLAUDE.txt in the Project instructions.
+4. Add the n8n/ folder files to the Project files too, as examples.
+5. Start a chat in the Project: "Read my answers and propose the first step."
+Claude will adapt every command below to your hardware. Never paste passwords or API keys in the chat.
+
+
+STEP 3 - INSTALL DOCKER (on the Linux machine)
+----------------------------------------------
+    curl -fsSL https://get.docker.com | sudo sh
+    sudo usermod -aG docker $USER
+Log out and back in, then check:
+    docker run --rm hello-world
+
+
+STEP 4 - UPTIME KUMA
+--------------------
+    docker run -d --name uptime-kuma --restart unless-stopped -p 3001:3001 -v uptime-kuma:/app/data louislam/uptime-kuma:2
+Open http://IP-OF-THE-MACHINE:3001 and create the admin account.
+- Add a Ping monitor for each important device (firewall, modem, switches, NAS, servers).
+  Use a 30-second interval for the network chain so the order of failures is reliable.
+- Create a Status Page (the original one is called "homelab") and add your monitors to it:
+  the dashboard and n8n read this public status page, no API key needed.
+
+
+STEP 5 - THE DASHBOARD WEB SERVER (Nginx)
+-----------------------------------------
+    mkdir -p ~/dashboard/site ~/dashboard/nginx
+Copy the content of the dashboard/ folder (without nginx-example) to ~/dashboard/site, and
+dashboard/nginx-example/default.conf to ~/dashboard/nginx/default.conf (change the addresses and
+put your keys where you see A_REMPLIR), then:
+    docker run -d --name dashboard-web --restart unless-stopped -p 8085:80 -v ~/dashboard/site:/usr/share/nginx/html:ro -v ~/dashboard/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro nginx:stable
+Why Nginx: it also works as a RELAY (reverse proxy) to each device's API. The browser only talks
+to Nginx, API keys stay in the Nginx config, never in the web pages.
+Important: when default.conf is mounted as a single file, edit it IN PLACE (do not replace the file),
+then: docker restart dashboard-web
+The pages are the real ones of the original homelab: read dashboard/README_DASHBOARD.txt, then
+adapt them with Claude, one page at a time. Cards for devices you do not have show "unavailable":
+delete them or point them to your own devices.
+
+
+STEP 6 - GLANCES (on each server or NAS to watch)
+-------------------------------------------------
+    docker run -d --name glances --restart unless-stopped --pid host -p 61208:61208 -e GLANCES_OPT="-w" -v /var/run/docker.sock:/var/run/docker.sock:ro nicolargo/glances:latest-full
+Test: http://IP-OF-THE-SERVER:61208/api/4/all  (returns JSON: CPU, RAM, disks, containers)
+On a NAS (TrueNAS, Synology), install it as an app or a container in the same way.
+
+
+STEP 7 - n8n
+------------
+    docker volume create n8n_data
+    docker run -d --name n8n --restart unless-stopped -p 5678:5678 -e GENERIC_TIMEZONE="America/Toronto" -e TZ="America/Toronto" -e N8N_SECURE_COOKIE=false -v n8n_data:/home/node/.n8n docker.n8n.io/n8nio/n8n
+(Change the time zone to yours. N8N_SECURE_COOKIE=false is only for access on your local network over http.)
+Open http://IP-OF-THE-MACHINE:5678 and create the owner account.
+
+Import a workflow:
+  + (top left), Workflow, then the ⋯ menu next to the workflow name, Import from File.
+Start with Kuma_Statut_resume.json and Journal_des_pannes.json: they only need Uptime Kuma.
+
+After each import:
+  1. Replace IP_PRIVEE_n, PORT_n, DOMAINE_n with your own addresses (or ask Claude to adapt the node).
+  2. Put your own keys where you see A_REMPLIR (in the code of Code nodes, or in the Headers of HTTP nodes).
+  3. Remove the checks for devices you do not have.
+  4. Save, then Publish. Workflows with a memory (outage log, alerts) only keep it when published.
+
+The big one, Verifier_system.json, is the morning report. Do not import it as is on day one:
+use it as a model. The method that works:
+  - one "check_" node per system, in a single chain;
+  - "Préparer systèmes" (Prepare systems) applies FIXED RULES: OK / WARN / CRIT. The AI never decides the status;
+  - "Prompt Ollama" asks the AI only to explain and propose a fix, in strict JSON, with one rule per system;
+  - the last Code nodes build the HTML report and save it in an n8n Data Table ("rapport_matin").
+
+
+STEP 8 - OLLAMA (on the GPU PC, Linux)
+--------------------------------------
+    curl -fsSL https://ollama.com/install.sh | sh
+    ollama pull ministral-3
+    ollama run ministral-3 "hello" >/dev/null; ollama ps
+"100% GPU" in the PROCESSOR column means the GPU is used.
+Let n8n reach Ollama over the network:
+    sudo systemctl edit ollama
+add these 2 lines in the editor, save:
+    [Service]
+    Environment="OLLAMA_HOST=0.0.0.0:11434"
+then:
+    sudo systemctl restart ollama
+Test from the n8n machine:
+    curl -s http://IP-OF-THE-GPU-PC:11434/api/version; echo
+Never open port 11434 to the internet: the Ollama API has no password.
+Why ministral-3: 10 models were tested with the same question; small, short and accurate won.
+With 8 GB of VRAM, try a smaller model and compare.
+
+
+STEP 9 - OPTIONAL
+-----------------
+- Firewall logs and attacks: Loki + Grafana + Alloy (the firewall sends syslog to Alloy, Loki stores it).
+  The node check_pfsense_logs reads Loki and checks attacking IPs on AbuseIPDB (free API key).
+- Phone access without exposing anything: WireGuard on the firewall, allowing only the dashboard address.
+- Phone notifications: the Home Assistant app, called by the Alertes_temps_reel workflow.
+Ask Claude for these, one at a time, with your firewall model.
+
+
+SECURITY RULES
+--------------
+- Keys and passwords: in n8n nodes or in the Nginx config only. Never in web pages, never in a chat.
+- Before sharing an n8n export, remove keys, tokens, passwords, addresses and domains.
+- Do not expose n8n, Kuma, Ollama or the dashboard to the internet. Use a VPN (WireGuard) for remote access.
+- Read-only checks first. Be careful with anything that touches the firewall or a VPN kill switch:
+  a wrong gateway setting can cut the whole network.
+- Put a version line at the top of every file (vYYYY.MM.DD-N) and keep a VERSIONS.txt log.
+
+----------------------------------------------------------------------
+Built by Playback71 (MY HOMELAB project), with the help of Claude (Anthropic) - November 2026

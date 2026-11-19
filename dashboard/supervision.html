@@ -1,0 +1,1527 @@
+<!DOCTYPE html>
+<!-- supervision.html : v2026.11.17-1 : English version (MY HOMELAB starter kit). NOC page: devices status, rack temperature with history, pings, Ollama GPU and models -->
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>HomeLab NOC Supervision</title>
+
+<link rel="stylesheet" href="./css/style.css">
+
+<link rel="stylesheet"
+href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+
+
+<style>
+
+
+.monitor-grid{
+
+display:grid;
+
+grid-template-columns:
+
+repeat(auto-fit,minmax(250px,1fr));
+
+gap:25px;
+
+}
+
+
+
+.server-status{
+
+padding:25px;
+
+border-radius:20px;
+
+background:
+
+rgba(0,0,0,.45);
+
+border:1px solid rgba(0,238,255,.3);
+
+}
+
+
+
+.green{
+
+color:#00ff88;
+
+text-shadow:
+
+0 0 15px #00ff88;
+
+}
+
+
+
+.red{
+
+color:#ff3355;
+
+text-shadow:
+
+0 0 15px #ff3355;
+
+}
+
+
+
+.status-light{
+
+width:15px;
+
+height:15px;
+
+border-radius:50%;
+
+display:inline-block;
+
+margin-right:10px;
+
+background:#00ff88;
+
+box-shadow:
+
+0 0 15px #00ff88;
+
+}
+
+
+
+.chart{
+
+height:15px;
+
+background:#111;
+
+border-radius:10px;
+
+overflow:hidden;
+
+margin-top:10px;
+
+}
+
+
+
+.chart span{
+
+display:block;
+
+height:100%;
+
+background:
+
+linear-gradient(90deg,#00eaff,#00ff88);
+
+}
+
+
+
+.ol-head{display:flex;align-items:center;flex-wrap:wrap;gap:6px 22px;margin:-10px 0 22px;font-size:1.05rem;}
+.ol-head .status-light{margin-right:0;}
+.ol-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
+.ol-grid .server-status h2{font-size:1.1rem;margin-bottom:14px;}
+.ol-grid .wide{grid-column:1 / -1;}
+.ol-kv{display:grid;grid-template-columns:150px 1fr;gap:6px 14px;font-size:1.05rem;align-items:center;margin-bottom:8px;}
+.ol-kv .k{color:#fff;font-weight:700;}
+.ol-kv .v{color:#fff;}
+.ol-gpu-name{font-size:1.15rem;font-weight:700;color:#fff;margin-bottom:14px;}
+.ol-tbl{width:100%;border-collapse:collapse;font-size:1rem;}
+.ol-tbl th{text-align:left;color:#ffc107;font-weight:700;border-bottom:1px solid rgba(255,255,255,.3);padding:6px 14px 6px 0;white-space:nowrap;}
+.ol-tbl td{color:#fff;padding:6px 14px 6px 0;border-bottom:1px solid rgba(255,255,255,.1);white-space:nowrap;}
+.ol-scroll{overflow-x:auto;}
+.ol-sub{font-weight:700;color:#fff;margin:16px 0 8px;font-size:1.05rem;}
+.ol-msg{color:#ffc107;font-size:1.05rem;}
+.ol-ok{color:#00ff88;}
+.ol-warn{color:#ffc107;}
+.ol-bad{color:#ff3355;}
+@media (max-width:900px){.ol-grid{grid-template-columns:1fr;}.ol-kv{grid-template-columns:120px 1fr;}}
+/* Phone: devices status on 2 columns, more compact cards */
+@media (max-width:900px){
+.etat-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;}
+.etat-grid .server-status{padding:12px;border-radius:14px;min-width:0;}
+.etat-grid .server-status h2{font-size:1rem;margin-bottom:8px;display:flex;align-items:center;gap:6px;}
+.etat-grid .status-light{width:10px;height:10px;margin-right:0;flex-shrink:0;}
+.etat-grid p{font-size:.8rem;margin:2px 0;overflow-wrap:anywhere;}
+.etat-grid .chart{height:8px;margin-top:6px;}
+}
+
+/* Rack temperature history */
+.carte-rack{cursor:pointer;}
+.carte-rack:focus-visible{outline:2px solid #00eaff;outline-offset:3px;}
+.carte-rack.ouverte{grid-column:1/-1;cursor:default;}
+.carte-rack.ouverte:hover{transform:none;}
+.carte-rack.ouverte > i, .carte-rack.ouverte > h2{cursor:pointer;}
+.rack-indice{color:#9fdcf0;font-size:.95rem;margin-top:8px;}
+.rack-histo{margin-top:14px;text-align:left;}
+.rack-boutons{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:12px;}
+.rack-boutons button{font:inherit;font-size:1rem;color:#e8f6ff;background:rgba(0,0,0,.35);border:1px solid rgba(0,238,255,.35);border-radius:10px;padding:7px 16px;cursor:pointer;}
+.rack-boutons button.actif{background:rgba(0,238,255,.2);color:#00eaff;border-color:#00eaff;font-weight:700;}
+.rack-graph{width:100%;min-height:120px;color:#e8f6ff;}
+.rack-graph svg{width:100%;height:auto;display:block;touch-action:pan-y;}
+.rack-info{min-height:1.6em;text-align:center;font-size:1.05rem;color:#e8f6ff;margin-top:6px;font-variant-numeric:tabular-nums;}
+.rack-resume{display:flex;justify-content:center;gap:6px 20px;flex-wrap:wrap;margin-top:8px;font-size:1.05rem;color:#e8f6ff;font-variant-numeric:tabular-nums;}
+.rack-resume b{color:#00eaff;}
+@media (max-width:900px){.carte-rack.ouverte{padding:14px 10px;}.rack-boutons button{padding:6px 12px;font-size:.95rem;}.rack-info,.rack-resume{font-size:.95rem;}}
+</style>
+
+<style id="zoom-mobile">@media (max-width:900px){html{zoom:0.9}}</style>
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+</head>
+
+
+
+
+
+
+<body class="compact-cards">
+
+
+<div class="background"></div>
+
+<div class="overlay"></div>
+
+
+
+
+
+<header>
+
+
+<div class="logo">
+
+<i class="fa-solid fa-eye"></i>
+
+NOC HOMELAB
+
+</div>
+
+
+
+
+
+<nav>
+
+
+<a href="/index.html">
+
+<i class="fa-solid fa-gauge"></i>
+
+Dashboard
+
+</a>
+
+
+
+
+
+
+<a href="/documentation.html">
+
+<i class="fa-solid fa-book"></i>
+
+Documentation
+
+</a>
+
+
+
+<a href="/journal.html">
+
+<i class="fa-solid fa-clock-rotate-left"></i>
+
+Journal
+
+</a>
+
+
+
+
+<a href="/reseau.html">
+
+<i class="fa-solid fa-network-wired"></i>
+
+Network
+
+</a>
+
+
+
+
+<a class="active" href="/supervision.html">
+
+<i class="fa-solid fa-eye"></i>
+
+Supervision
+
+</a>
+
+
+
+
+<a href="/proxmox.html">
+
+<i class="fa-solid fa-layer-group"></i>
+
+Proxmox
+
+</a>
+        <a href="/pfsense.html"><i class="fa-solid fa-shield-halved"></i> pfSense</a>
+
+
+
+</nav>
+
+
+
+<div class="time">
+<i class="fa-regular fa-clock"></i>
+<span id="clock">00:00:00</span>
+</div>
+
+</header>
+
+
+
+
+
+
+
+
+<main>
+
+
+
+
+
+<section class="hero">
+
+
+<h1>
+
+NOC SUPERVISION CENTER
+
+</h1>
+
+
+<p>
+
+Real-time infrastructure monitoring
+
+</p>
+
+
+<div class="online">
+
+<i class="fa-solid fa-circle"></i>
+
+All services available
+
+</div>
+
+
+</section>
+
+
+
+
+
+
+
+
+
+<section class="panel">
+
+
+<h2>
+
+<i class="fa-solid fa-server"></i>
+
+Devices status
+
+</h2>
+
+
+
+
+
+<div class="monitor-grid etat-grid">
+
+
+
+
+
+
+<div class="server-status">
+
+<h2>
+
+<span class="status-light" id="ck-light"></span>
+
+Unifi CloudKey
+
+</h2>
+
+<p id="ck-ping">Latency: --</p>
+
+<p class="green" id="ck-status">● Waiting</p>
+
+<p id="ck-up">Availability --</p>
+
+<div class="chart">
+
+<span id="ck-bar" style="width:0%"></span>
+
+</div>
+
+</div>
+
+
+
+
+
+
+
+
+<div class="server-status">
+
+<h2>
+
+<span class="status-light" id="unvr-light"></span>
+
+Unifi UNVR
+
+</h2>
+
+<p id="unvr-ping">Latency: --</p>
+
+<p class="green" id="unvr-status">● Waiting</p>
+
+<p id="unvr-cams">Cameras: --</p>
+
+<p id="unvr-alarm">Alarm: --</p>
+
+<p id="unvr-up">Availability --</p>
+
+<div class="chart">
+
+<span id="unvr-bar" style="width:0%"></span>
+
+</div>
+
+</div>
+
+
+
+
+
+
+
+
+<div class="server-status">
+
+
+<h2>
+
+<span class="status-light" id="ha-light"></span>
+
+Home Assistant
+
+</h2>
+
+
+<p id="ha-entities">
+
+-- entities
+
+</p>
+
+
+<p id="ha-status" class="green">
+
+● Loading...
+
+</p>
+
+
+<p id="ha-unavailable">
+
+</p>
+
+
+<p>
+
+Disk <span id="ha-disk">--</span>
+
+</p>
+
+
+<div class="chart">
+
+<span id="ha-disk-bar" style="width:0%"></span>
+
+</div>
+
+
+
+</div>
+
+
+
+
+
+
+
+
+<div class="server-status">
+
+
+<h2>
+
+<span class="status-light" id="nc-light"></span>
+
+Nextcloud
+
+</h2>
+
+
+<p id="nc-version">
+
+--
+
+</p>
+
+
+<p id="nc-status" class="green">
+
+● Loading...
+
+</p>
+
+
+<p>
+
+Storage <span id="nc-storage">--</span>
+
+</p>
+
+
+<div class="chart">
+
+<span id="nc-storage-bar" style="width:0%"></span>
+
+</div>
+
+
+</div>
+
+
+
+
+
+
+</div>
+
+
+
+</section>
+
+
+
+
+
+
+
+
+
+<section class="cards">
+
+
+
+
+
+<div class="card carte-rack" id="carte-rack" role="button" tabindex="0" aria-expanded="false" title="Tap to see the history">
+
+
+<i class="fa-solid fa-temperature-half"></i>
+
+
+<h2>
+
+Temperature
+
+</h2>
+
+
+<div class="number" id="rack-temp">--°C</div>
+<p id="rack-temp-status">Waiting for Home Assistant</p>
+<p class="rack-indice" id="rack-indice">Tap for the history</p>
+<div class="rack-histo" id="rack-histo" hidden>
+  <div class="rack-boutons">
+    <button type="button" data-jours="1">1 day</button>
+    <button type="button" data-jours="3" class="actif">3 days</button>
+    <button type="button" data-jours="7">7 days</button>
+  </div>
+  <div class="rack-graph" id="rack-graph">Loading the history…</div>
+  <div class="rack-info" id="rack-info"></div>
+  <div class="rack-resume" id="rack-resume"></div>
+</div>
+
+
+</div>
+
+
+
+
+
+
+
+<div class="card">
+
+
+<i class="fa-solid fa-network-wired"></i>
+
+
+<h2>
+
+Ping Google
+
+</h2>
+
+
+<div class="number" id="ping-google-value">--ms</div>
+<p id="ping-google">Waiting for Kuma</p>
+
+
+</div>
+
+
+
+
+
+
+
+<div class="card">
+
+
+<i class="fa-solid fa-network-wired"></i>
+
+
+<h2>
+
+Ping LAN
+
+</h2>
+
+
+<div class="number" id="ping-lan-value">--ms</div>
+<p id="ping-lan">Waiting for Kuma</p>
+
+
+</div>
+
+
+
+
+
+</section>
+
+
+
+
+
+
+<section class="panel" id="ollama-panel">
+
+<h2>
+<i class="fa-solid fa-brain"></i>
+Ollama-Server
+</h2>
+
+<div class="ol-head">
+<span><span class="status-light" id="ol-light" style="background:#555;box-shadow:none;"></span><span id="ol-status">Waiting…</span></span>
+<span id="ol-version">Ollama --</span>
+<span id="ol-driver">NVIDIA driver --</span>
+</div>
+
+<div class="monitor-grid ol-grid">
+
+<div class="server-status">
+<h2><i class="fa-solid fa-microchip"></i> GPU &mdash; nvidia-smi</h2>
+<div id="ol-gpu"><p class="ol-msg">Loading…</p></div>
+</div>
+
+<div class="server-status">
+<h2><i class="fa-solid fa-bolt"></i> Loaded models &mdash; ollama ps</h2>
+<div id="ol-ps" class="ol-scroll"><p class="ol-msg">Loading…</p></div>
+</div>
+
+<div class="server-status wide">
+<h2><i class="fa-solid fa-list"></i> Installed models &mdash; ollama list</h2>
+<div id="ol-list" class="ol-scroll"><p class="ol-msg">Loading…</p></div>
+</div>
+
+</div>
+
+</section>
+
+<section class="panel">
+
+<h2>
+
+<i class="fa-solid fa-gear"></i>
+
+Configuration Home Assistant / Nextcloud
+
+</h2>
+
+<p style="opacity:.7;font-size:.9em;margin-bottom:15px;">
+This information stays only in your browser (localStorage) — never sent anywhere except to your own servers.
+</p>
+
+<div class="monitor-grid">
+
+<div class="server-status">
+<h2>Home Assistant</h2>
+<p>
+<label style="display:block;margin-bottom:5px;">URL (e.g. http://192.168.x.x:8123)</label>
+<input type="text" id="ha-url-input" placeholder="http://192.168.x.x:8123" style="width:100%;padding:8px;border-radius:8px;border:1px solid rgba(0,238,255,.3);background:rgba(0,0,0,.3);color:#fff;margin-bottom:10px;">
+<label style="display:block;margin-bottom:5px;">Token (Long-Lived Access Token)</label>
+<input type="password" id="ha-token-input" placeholder="ey..." style="width:100%;padding:8px;border-radius:8px;border:1px solid rgba(0,238,255,.3);background:rgba(0,0,0,.3);color:#fff;">
+</p>
+</div>
+
+<div class="server-status">
+<h2>Nextcloud</h2>
+<p>
+<label style="display:block;margin-bottom:5px;">URL (e.g. https://cloud.yourdomain.com)</label>
+<input type="text" id="nc-url-input" placeholder="https://cloud.yourdomain.com" style="width:100%;padding:8px;border-radius:8px;border:1px solid rgba(0,238,255,.3);background:rgba(0,0,0,.3);color:#fff;margin-bottom:10px;">
+<label style="display:block;margin-bottom:5px;">Token (serverinfo)</label>
+<input type="password" id="nc-token-input" placeholder="token..." style="width:100%;padding:8px;border-radius:8px;border:1px solid rgba(0,238,255,.3);background:rgba(0,0,0,.3);color:#fff;">
+</p>
+</div>
+
+</div>
+
+<br>
+<button id="save-config-btn" class="online" style="cursor:pointer;border:none;">
+<i class="fa-solid fa-floppy-disk"></i> Save the configuration
+</button>
+<button id="export-config-btn" class="online" style="cursor:pointer;border:none;margin-left:10px;">
+<i class="fa-solid fa-download"></i> Export
+</button>
+<button id="import-config-btn" class="online" style="cursor:pointer;border:none;margin-left:10px;">
+<i class="fa-solid fa-upload"></i> Import
+</button>
+<input type="file" id="import-config-file" accept=".json" style="display:none;">
+<span id="config-saved-msg" style="margin-left:15px;opacity:0;transition:opacity .3s;">✅ Saved</span>
+
+</section>
+
+
+</main>
+
+
+
+
+
+
+<footer>
+
+MY HOMELAB © 2026
+
+</footer>
+
+
+
+<script src="./js/clock.js"></script>
+<script src="./js/fit-page.js"></script>
+</body>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+
+    // --- Configuration (stored in the browser only) ---
+    const haUrlInput = document.getElementById('ha-url-input');
+    const haTokenInput = document.getElementById('ha-token-input');
+    const ncUrlInput = document.getElementById('nc-url-input');
+    const ncTokenInput = document.getElementById('nc-token-input');
+    const saveBtn = document.getElementById('save-config-btn');
+    const savedMsg = document.getElementById('config-saved-msg');
+
+    // Load the saved values when the page loads
+    haUrlInput.value = localStorage.getItem('ha_url') || '';
+    haTokenInput.value = localStorage.getItem('ha_token') || '';
+    ncUrlInput.value = localStorage.getItem('nc_url') || '';
+    ncTokenInput.value = localStorage.getItem('nc_token') || '';
+
+    saveBtn.addEventListener('click', () => {
+        localStorage.setItem('ha_url', haUrlInput.value.trim());
+        localStorage.setItem('ha_token', haTokenInput.value.trim());
+        localStorage.setItem('nc_url', ncUrlInput.value.trim());
+        localStorage.setItem('nc_token', ncTokenInput.value.trim());
+
+        savedMsg.style.opacity = 1;
+        setTimeout(() => { savedMsg.style.opacity = 0; }, 2000);
+
+        // Run the requests again right away with the new values
+        fetchHomeAssistant();
+        fetchNextcloud();
+    });
+
+    // --- Export the configuration to a JSON file ---
+    const exportBtn = document.getElementById('export-config-btn');
+    exportBtn.addEventListener('click', () => {
+        const config = {
+            ha_url: localStorage.getItem('ha_url') || '',
+            ha_token: localStorage.getItem('ha_token') || '',
+            nc_url: localStorage.getItem('nc_url') || '',
+            nc_token: localStorage.getItem('nc_token') || ''
+        };
+        const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'homelab-config.json';
+        a.click();
+        URL.revokeObjectURL(url);
+    });
+
+    // --- Import the configuration from a JSON file ---
+    const importBtn = document.getElementById('import-config-btn');
+    const importFileInput = document.getElementById('import-config-file');
+
+    importBtn.addEventListener('click', () => {
+        importFileInput.click();
+    });
+
+    importFileInput.addEventListener('change', (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const config = JSON.parse(e.target.result);
+                haUrlInput.value = config.ha_url || '';
+                haTokenInput.value = config.ha_token || '';
+                ncUrlInput.value = config.nc_url || '';
+                ncTokenInput.value = config.nc_token || '';
+
+                // Save right away in localStorage and run the requests again
+                localStorage.setItem('ha_url', haUrlInput.value);
+                localStorage.setItem('ha_token', haTokenInput.value);
+                localStorage.setItem('nc_url', ncUrlInput.value);
+                localStorage.setItem('nc_token', ncTokenInput.value);
+
+                savedMsg.style.opacity = 1;
+                setTimeout(() => { savedMsg.style.opacity = 0; }, 2000);
+
+                fetchHomeAssistant();
+                fetchNextcloud();
+            } catch (err) {
+                console.error('Invalid configuration file:', err);
+                alert('This file does not look like a valid configuration.');
+            }
+        };
+        reader.readAsText(file);
+    });
+
+    // --- Home Assistant ---
+    // Home Assistant disk space (Supervisor "Home Assistant Host" sensors; sensor names of a French HA install)
+    function updateHaDisk(states) {
+        const el = document.getElementById('ha-disk');
+        const bar = document.getElementById('ha-disk-bar');
+        if (!el || !bar) return;
+        const lire = fin => {
+            const e = states.find(x => x.entity_id.startsWith('sensor.home_assistant_host_') && x.entity_id.endsWith(fin));
+            return e && !isNaN(parseFloat(e.state)) ? parseFloat(e.state) : null;
+        };
+        const total = lire('_taille_total_du_disque');
+        const utilise = lire('_taille_du_disque_utilise');
+        const libre = lire('_taille_du_disque_libre');
+        if (total === null || utilise === null || total <= 0) {
+            el.textContent = 'sensors disabled';
+            bar.style.width = '0%';
+            return;
+        }
+        const pct = Math.round(utilise / total * 100);
+        el.textContent = utilise.toFixed(1) + ' / ' + total.toFixed(1) + ' GB (' + pct + ' %) — ' + (libre !== null ? libre : total - utilise).toFixed(1) + ' GB free';
+        bar.style.width = pct + '%';
+        if (pct >= 90) { bar.style.background = '#ff4d4d'; bar.style.boxShadow = '0 0 10px #ff4d4d'; }
+        else if (pct >= 80) { bar.style.background = '#ffc107'; bar.style.boxShadow = '0 0 10px #ffc107'; }
+        else { bar.style.background = ''; bar.style.boxShadow = ''; }
+    }
+
+    async function fetchHomeAssistant() {
+        const haUrl = localStorage.getItem('ha_url');
+        const haToken = localStorage.getItem('ha_token');
+        const light = document.getElementById('ha-light');
+        const entitiesEl = document.getElementById('ha-entities');
+        const statusEl = document.getElementById('ha-status');
+        const unavailEl = document.getElementById('ha-unavailable');
+
+        if (!haUrl || !haToken) {
+            statusEl.className = '';
+            statusEl.innerHTML = '⚪ Not configured';
+            entitiesEl.innerText = 'Add the URL and the token below';
+            return;
+        }
+
+        try {
+            const response = await fetch(`${haUrl}/api/states`, {
+                headers: {
+                    'Authorization': `Bearer ${haToken}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+
+            const states = await response.json();
+            updateRackTemp(states);
+            updateHaDisk(states);
+            const total = states.length;
+            // Only entities that are really down:
+            //  - "unknown" is not a failure (e.g. weather with no value yet): only "unavailable" counts;
+            //  - stateless entities never have a value (scenes, buttons, events, voice, notify...): ignored;
+            //  - energy cost sensors (_cost, _compensation) with no rate set: ignored;
+            //  - IGNORER: entities not to watch (e.g. unplugged seasonal decoration).
+            const SANS_ETAT = ['scene', 'button', 'input_button', 'event', 'tts', 'stt', 'notify', 'ai_task',
+                               'conversation', 'wake_word', 'image', 'update', 'person', 'device_tracker'];
+            const IGNORER = [];   // ex. ['switch.sapin_de_noel', 'switch.sapin_de_noel_led']
+            const unavailable = states.filter(s => {
+                const domaine = s.entity_id.split('.')[0];
+                return s.state === 'unavailable'
+                    && !SANS_ETAT.includes(domaine)
+                    && !/_(cost|compensation)$/.test(s.entity_id)
+                    && !IGNORER.includes(s.entity_id);
+            });
+
+            entitiesEl.innerText = `${total} entities`;
+            statusEl.className = 'green';
+            statusEl.innerHTML = '● ONLINE';
+            light.style.background = '#00ff88';
+            light.style.boxShadow = '0 0 15px #00ff88';
+
+            if (unavailable.length > 0) {
+                const names = unavailable.slice(0, 6).map(s => s.attributes.friendly_name || s.entity_id).join(', ');
+                unavailEl.innerHTML = `<span class="red">⚠ ${unavailable.length} unavailable:</span> ${names}${unavailable.length > 6 ? '…' : ''}`;
+            } else {
+                unavailEl.innerText = 'All entities answer';
+            }
+
+        } catch (error) {
+            console.error('Home Assistant error:', error);
+            updateRackTemp([]);
+            statusEl.className = 'red';
+            statusEl.innerHTML = '● Connection error';
+            entitiesEl.innerText = '--';
+            light.style.background = '#ff3355';
+            light.style.boxShadow = '0 0 15px #ff3355';
+        }
+    }
+
+    // --- Rack temperature (Zigbee sensor through Home Assistant) ---
+    function updateRackTemp(states) {
+        const tempEl = document.getElementById('rack-temp');
+        const statusEl = document.getElementById('rack-temp-status');
+        if (!tempEl || !statusEl) return;
+        const sensor = states.find(x => x.entity_id === 'sensor.temp_rack_server_temperature');
+        const v = sensor ? parseFloat(sensor.state) : NaN;
+        if (isNaN(v)) {
+            tempEl.innerText = '--°C';
+            statusEl.innerText = 'Sensor unavailable';
+            statusEl.style.color = '#ff3355';
+            return;
+        }
+        let label = 'Normal';
+        let color = '#00ff88';
+        if (v >= 35) { label = 'Critical'; color = '#ff3355'; }
+        else if (v >= 30) { label = 'Warning'; color = '#ffc107'; }
+        tempEl.innerText = v.toFixed(1) + '°C';
+        statusEl.innerText = label + ' (inside the rack)';
+        statusEl.style.color = color;
+    }
+
+    // --- Rack temperature history ---
+    // A click on the Temperature card shows the Home Assistant history, one point per hour
+    // (one bar per hour, colored by the worst value of the hour). Another click on the icon or the title goes back to live.
+    const RACK_CAPTEUR = 'sensor.temp_rack_server_temperature';
+    const RACK_ATTENTION = 30, RACK_CRITIQUE = 35;   // same thresholds as the card
+    let rackJours = 3, rackPoints = [], rackMinuterie = null;
+
+    function rackCouleur(v) { return v >= RACK_CRITIQUE ? '#ff3355' : v >= RACK_ATTENTION ? '#ffc107' : '#00ff88'; }
+    const JOURS_COURTS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const fmt1 = (v) => v.toFixed(1).replace('.', ',');
+
+    async function chargerHistoriqueRack() {
+        const graph = document.getElementById('rack-graph');
+        const haUrl = localStorage.getItem('ha_url');
+        const haToken = localStorage.getItem('ha_token');
+        if (!haUrl || !haToken) { graph.textContent = 'Home Assistant not configured'; return; }
+        const fin = new Date();
+        const debut = new Date(fin.getTime() - rackJours * 24 * 3600 * 1000);
+        debut.setMinutes(0, 0, 0);
+        try {
+            const url = haUrl + '/api/history/period/' + encodeURIComponent(debut.toISOString()) +
+                '?filter_entity_id=' + RACK_CAPTEUR + '&end_time=' + encodeURIComponent(fin.toISOString()) +
+                '&minimal_response&no_attributes';
+            const r = await fetch(url, { headers: { 'Authorization': 'Bearer ' + haToken } });
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            const data = await r.json();
+            const brut = (Array.isArray(data) && data[0]) ? data[0] : [];
+            // Valid readings, sorted by time
+            const mesures = brut.map((x) => ({ t: new Date(x.last_changed || x.last_updated).getTime(), v: parseFloat(x.state) }))
+                .filter((x) => !isNaN(x.v) && !isNaN(x.t)).sort((a, b) => a.t - b.t);
+            if (!mesures.length) { graph.textContent = 'No reading in Home Assistant for this period'; rackPoints = []; return; }
+            // One box per hour. The sensor only sends a value when it changes:
+            // an hour with no new reading keeps the last known value.
+            const points = [];
+            let j = 0, derniere = NaN;
+            for (let h0 = debut.getTime(); h0 <= fin.getTime(); h0 += 3600 * 1000) {
+                const h1 = h0 + 3600 * 1000;
+                const vals = [];
+                while (j < mesures.length && mesures[j].t < h1) {
+                    if (mesures[j].t >= h0) vals.push(mesures[j].v);
+                    derniere = mesures[j].v;
+                    j++;
+                }
+                if (!vals.length && !isNaN(derniere)) vals.push(derniere);
+                if (!vals.length) continue;
+                const moy = vals.reduce((a, b) => a + b, 0) / vals.length;
+                points.push({ t: h0, moy: moy, min: Math.min.apply(null, vals), max: Math.max.apply(null, vals) });
+            }
+            rackPoints = points;
+            dessinerHistoriqueRack();
+        } catch (e) {
+            console.error('Rack history:', e);
+            graph.textContent = 'History unavailable (' + (e.message || e) + ')';
+        }
+    }
+
+    function dessinerHistoriqueRack() {
+        const graph = document.getElementById('rack-graph');
+        const resume = document.getElementById('rack-resume');
+        const info = document.getElementById('rack-info');
+        const P = rackPoints;
+        if (!P.length) return;
+        // One bar per hour: height = average of the hour; color = worst value of the hour (cyan normal, yellow Warning, red Critical)
+        // The drawing uses the real width of the card: text keeps its size on computer and phone
+        const W = Math.max(300, Math.round(graph.clientWidth || 600)), H = W > 700 ? 320 : 250, G = 42, D = 10, Hh = 12, B = 50;
+        const mins = P.map((p) => p.min), maxs = P.map((p) => p.max);
+        let yMin = Math.floor(Math.min.apply(null, mins) - 2), yMax = Math.ceil(Math.max.apply(null, maxs) + 1);
+        if (yMax - yMin < 5) { yMin = yMax - 5; }
+        const t0 = P[0].t, HEURE = 3600 * 1000;
+        const n = Math.round((P[P.length - 1].t - t0) / HEURE) + 1;   // number of hours on the axis
+        const pasX = (W - G - D) / n;
+        const xg = (t) => G + (t - t0) / HEURE * pasX;                 // left edge of hour t
+        const y = (v) => Hh + (yMax - v) / (yMax - yMin) * (H - Hh - B);
+        const bas = H - B;
+        const couleurBarre = (p) => p.max >= RACK_CRITIQUE ? '#ff3355' : p.max >= RACK_ATTENTION ? '#ffc107' : '#00eaff';
+        let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Rack temperature, ' + rackJours + ' day(s), one bar per hour">';
+        // Horizontal grid and degree marks
+        const pas = (yMax - yMin) > 12 ? 4 : (yMax - yMin) > 6 ? 2 : 1;
+        for (let v = Math.ceil(yMin / pas) * pas; v <= yMax; v += pas) {
+            s += '<line x1="' + G + '" x2="' + (W - D) + '" y1="' + y(v) + '" y2="' + y(v) + '" stroke="rgba(255,255,255,.10)"/>';
+            s += '<text x="' + (G - 8) + '" y="' + (y(v) + 5) + '" text-anchor="end" font-size="14" fill="#cfe3ee">' + v + '°</text>';
+        }
+        // Hour scale: every 2 h (1 day), 6 h (3 days) or 12 h (7 days), depending on the room
+        const intervalle = rackJours <= 1 ? (W < 500 ? 3 : 2) : rackJours <= 3 ? (W < 500 ? 12 : 6) : (W < 500 ? 24 : 12);
+        const premiere = new Date(t0); premiere.setMinutes(0, 0, 0);
+        while (premiere.getHours() % intervalle !== 0) premiere.setTime(premiere.getTime() + HEURE);
+        for (let t = premiere.getTime(); t < t0 + n * HEURE; t += intervalle * HEURE) {
+            const d = new Date(t), minuit = d.getHours() === 0;
+            s += '<line x1="' + xg(t) + '" x2="' + xg(t) + '" y1="' + Hh + '" y2="' + (bas + 5) + '" stroke="' + (minuit ? 'rgba(0,238,255,.35)' : 'rgba(255,255,255,.07)') + '"/>';
+            s += '<text x="' + xg(t) + '" y="' + (bas + 19) + '" text-anchor="middle" font-size="13" fill="#cfe3ee">' + d.getHours() + ' h</text>';
+        }
+        // Day name under the hour scale, in the middle of each visible day
+        const jour0 = new Date(t0); jour0.setHours(0, 0, 0, 0);
+        for (let d = jour0.getTime(); d < t0 + n * HEURE; d += 24 * HEURE) {
+            const a = Math.max(d, t0), b = Math.min(d + 24 * HEURE, t0 + n * HEURE);
+            if ((b - a) / HEURE < (W < 500 ? 8 : 5)) continue;   // too little room to write it
+            const dd = new Date(d);
+            s += '<text x="' + ((xg(a) + xg(b)) / 2) + '" y="' + (bas + 40) + '" text-anchor="middle" font-size="14" font-weight="700" fill="#00eaff">' + JOURS_COURTS[dd.getDay()] + ' ' + dd.getDate() + '</text>';
+        }
+        // Bars
+        const largeur = Math.max(1, pasX * (pasX > 4 ? 0.72 : 0.9));
+        P.forEach((p) => {
+            const yt = Math.min(y(p.moy), bas - 1);
+            s += '<rect x="' + (xg(p.t) + (pasX - largeur) / 2) + '" y="' + yt + '" width="' + largeur + '" height="' + (bas - yt) + '" rx="' + Math.min(2, largeur / 3) + '" fill="' + couleurBarre(p) + '"' + (p.max >= RACK_ATTENTION ? '' : ' opacity=".85"') + '/>';
+        });
+        // Warning and Critical thresholds, if they fall within the scale
+        [[RACK_ATTENTION, '#ffc107'], [RACK_CRITIQUE, '#ff3355']].forEach(([v, c]) => {
+            if (v > yMin && v < yMax) s += '<line x1="' + G + '" x2="' + (W - D) + '" y1="' + y(v) + '" y2="' + y(v) + '" stroke="' + c + '" stroke-dasharray="6 5" stroke-width="1.5" opacity=".9"/>';
+        });
+        s += '<line x1="' + G + '" x2="' + (W - D) + '" y1="' + bas + '" y2="' + bas + '" stroke="rgba(255,255,255,.35)"/>';
+        // Marker of the hour being read (hover or touch)
+        s += '<rect id="rack-repere" x="0" y="' + Hh + '" width="' + Math.max(pasX, 3) + '" height="' + (bas - Hh) + '" fill="rgba(255,255,255,.16)" stroke="#ffffff" stroke-width="1" opacity="0"/>';
+        s += '</svg>';
+        graph.innerHTML = s;
+
+        const tous = P.map((p) => p.moy);
+        const moyenne = tous.reduce((a, b) => a + b, 0) / tous.length;
+        const vmin = Math.min.apply(null, mins), vmax = Math.max.apply(null, maxs);
+        const heuresAttention = P.filter((p) => p.max >= RACK_ATTENTION).length;
+        resume.innerHTML = '<span>Min <b>' + fmt1(vmin) + ' °C</b></span><span>Average <b>' + fmt1(moyenne) + ' °C</b></span><span>Max <b style="color:' + rackCouleur(vmax) + '">' + fmt1(vmax) + ' °C</b></span>' +
+            '<span>Hours at ' + RACK_ATTENTION + ' °C or more: <b style="color:' + (heuresAttention ? '#ffc107' : '#00ff88') + '">' + heuresAttention + '</b></span>';
+        info.textContent = 'Slide over the bars to read an hour';
+
+        const svg = graph.querySelector('svg');
+        const repere = svg.querySelector('#rack-repere');
+        const montrer = (ev) => {
+            const r = svg.getBoundingClientRect();
+            const cx = ((ev.touches ? ev.touches[0].clientX : ev.clientX) - r.left) / r.width * W;
+            let best = P[0], dist = Infinity;
+            P.forEach((p) => { const d = Math.abs(xg(p.t) + pasX / 2 - cx); if (d < dist) { dist = d; best = p; } });
+            repere.setAttribute('x', xg(best.t) + pasX / 2 - Math.max(pasX, 3) / 2); repere.setAttribute('opacity', '1');
+            const d = new Date(best.t);
+            info.innerHTML = JOURS_COURTS[d.getDay()] + ' ' + d.getDate() + ', ' + d.getHours() + ' h to ' + ((d.getHours() + 1) % 24) + ' h: <b style="color:' + rackCouleur(best.max) + '">' + fmt1(best.moy) + ' °C</b>' +
+                (best.max - best.min >= 0.1 ? ' (' + fmt1(best.min) + ' to ' + fmt1(best.max) + ')' : '');
+        };
+        svg.addEventListener('mousemove', montrer);
+        svg.addEventListener('touchstart', montrer, { passive: true });
+        svg.addEventListener('touchmove', montrer, { passive: true });
+        svg.addEventListener('click', (ev) => ev.stopPropagation());
+    }
+
+    window.addEventListener('resize', () => {
+        if (document.getElementById('carte-rack').classList.contains('ouverte') && rackPoints.length) dessinerHistoriqueRack();
+    });
+
+    function basculerHistoriqueRack(ouvrir) {
+        const carte = document.getElementById('carte-rack');
+        const bloc = document.getElementById('rack-histo');
+        const indice = document.getElementById('rack-indice');
+        carte.classList.toggle('ouverte', ouvrir);
+        carte.setAttribute('aria-expanded', ouvrir ? 'true' : 'false');
+        bloc.hidden = !ouvrir;
+        indice.textContent = ouvrir ? "Tap the icon or the title to go back" : "Tap for the history";
+        clearInterval(rackMinuterie);
+        if (ouvrir) {
+            chargerHistoriqueRack();
+            rackMinuterie = setInterval(() => { if (!document.hidden) chargerHistoriqueRack(); }, 10 * 60 * 1000);
+        }
+    }
+
+    (function () {
+        const carte = document.getElementById('carte-rack');
+        if (!carte) return;
+        carte.addEventListener('click', (ev) => {
+            const ouverte = carte.classList.contains('ouverte');
+            if (!ouverte) { basculerHistoriqueRack(true); return; }
+            // Open: only the icon, the title, the value and the help text close it
+            if (ev.target.closest('i, h2, #rack-temp, #rack-temp-status, #rack-indice')) basculerHistoriqueRack(false);
+        });
+        carte.addEventListener('keydown', (ev) => {
+            if ((ev.key === 'Enter' || ev.key === ' ') && ev.target === carte) { ev.preventDefault(); basculerHistoriqueRack(!carte.classList.contains('ouverte')); }
+        });
+        carte.querySelectorAll('.rack-boutons button').forEach((b) => b.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            rackJours = Number(b.dataset.jours);
+            carte.querySelectorAll('.rack-boutons button').forEach((o) => o.classList.toggle('actif', o === b));
+            document.getElementById('rack-graph').textContent = "Loading the history…";
+            chargerHistoriqueRack();
+        }));
+    })();
+
+    // --- Ping Google (Kuma monitor 2, through the relay /kuma-api/) ---
+    async function fetchGooglePing() {
+        const valEl = document.getElementById('ping-google-value');
+        const el = document.getElementById('ping-google');
+        if (!valEl || !el) return;
+        try {
+            const r = await fetch('/kuma-api/api/status-page/heartbeat/homelab');
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            const data = await r.json();
+            const list = (data.heartbeatList && data.heartbeatList['2']) || [];
+            const last = list[list.length - 1];
+            if (!last || last.status !== 1 || last.ping === null || last.ping === undefined) {
+                valEl.innerText = '--ms';
+                el.innerText = 'Google offline';
+                el.style.color = '#ff3355';
+                return;
+            }
+            const ms = Math.round(Number(last.ping));
+            let label = 'Normal';
+            let color = '#00ff88';
+            if (ms >= 100) { label = 'Very slow'; color = '#ff3355'; }
+            else if (ms >= 50) { label = 'Slow'; color = '#ffc107'; }
+            valEl.innerText = ms + 'ms';
+            el.innerText = label + ' (google.com)';
+            el.style.color = color;
+        } catch (e) {
+            console.error('Ping Google error:', e);
+            valEl.innerText = '--ms';
+            el.innerText = 'Google unavailable';
+            el.style.color = '#ff3355';
+        }
+    }
+
+    // --- Ping LAN (average of the local Kuma monitors) + offline devices ---
+    async function fetchLanPing() {
+        const valEl = document.getElementById('ping-lan-value');
+        const el = document.getElementById('ping-lan');
+        if (!valEl || !el) return;
+        try {
+            const [hr, pr] = await Promise.all([
+                fetch('/kuma-api/api/status-page/heartbeat/homelab'),
+                fetch('/kuma-api/api/status-page/homelab')
+            ]);
+            if (!hr.ok || !pr.ok) throw new Error('HTTP ' + hr.status + '/' + pr.status);
+            const hb = (await hr.json()).heartbeatList || {};
+            const page = await pr.json();
+            const names = {};
+            (page.publicGroupList || []).forEach(g => (g.monitorList || []).forEach(m => { names[m.id] = m.name; }));
+
+            const down = [];
+            Object.keys(hb).forEach(id => {
+                const list = hb[id];
+                const last = list[list.length - 1];
+                if (last && last.status !== 1 && last.status !== 3) down.push(names[id] || ('Monitor ' + id));
+            });
+
+            const lanIds = ['3', '4', '5', '6', '7', '16', '17', '18'];
+            const vals = [];
+            lanIds.forEach(id => {
+                const list = hb[id] || [];
+                const last = list[list.length - 1];
+                if (last && last.status === 1 && last.ping !== null && last.ping !== undefined) vals.push(Number(last.ping));
+            });
+            const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : NaN;
+            valEl.innerText = isNaN(avg) ? '--ms' : avg.toFixed(1) + 'ms';
+
+            if (down.length > 0) {
+                el.innerText = 'Offline: ' + down.slice(0, 3).join(', ') + (down.length > 3 ? '…' : '');
+                el.style.color = '#ff3355';
+            } else if (isNaN(avg)) {
+                el.innerText = 'LAN unavailable';
+                el.style.color = '#ff3355';
+            } else {
+                let label = 'Normal';
+                let color = '#00ff88';
+                if (avg >= 20) { label = 'Very slow'; color = '#ff3355'; }
+                else if (avg >= 5) { label = 'Slow'; color = '#ffc107'; }
+                el.innerText = label + ' (' + vals.length + '/' + lanIds.length + ' devices)';
+                el.style.color = color;
+            }
+        } catch (e) {
+            console.error('Ping LAN error:', e);
+            valEl.innerText = '--ms';
+            el.innerText = 'Kuma unavailable';
+            el.style.color = '#ff3355';
+        }
+    }
+
+    // --- UniFi cards (Kuma monitors 4 = CloudKey, 5 = UNVR) ---
+    async function fetchUnifiCards() {
+        const cards = [{ id: '4', p: 'ck' }, { id: '5', p: 'unvr' }];
+        const setCard = (p, ok, stText, pingTxt, upTxt, upPct) => {
+            const light = document.getElementById(p + '-light');
+            const st = document.getElementById(p + '-status');
+            const ping = document.getElementById(p + '-ping');
+            const up = document.getElementById(p + '-up');
+            const bar = document.getElementById(p + '-bar');
+            if (!light || !st || !ping || !up || !bar) return;
+            st.className = ok ? 'green' : 'red';
+            st.innerHTML = stText;
+            light.style.background = ok ? '#00ff88' : '#ff3355';
+            light.style.boxShadow = '0 0 15px ' + (ok ? '#00ff88' : '#ff3355');
+            ping.innerText = pingTxt;
+            up.innerText = upTxt;
+            bar.style.width = upPct + '%';
+        };
+        try {
+            const r = await fetch('/kuma-api/api/status-page/heartbeat/homelab');
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            const data = await r.json();
+            const hb = data.heartbeatList || {};
+            const upl = data.uptimeList || {};
+            cards.forEach(c => {
+                const list = hb[c.id] || [];
+                const last = list[list.length - 1];
+                if (!last) { setCard(c.p, false, '● No data', 'Latency: --', 'Availability --', 0); return; }
+                const ok = last.status === 1;
+                const ping = (last.ping !== null && last.ping !== undefined) ? 'Latency: ' + Number(last.ping).toFixed(2) + ' ms' : 'Latency: --';
+                let pct = upl[c.id + '_24'];
+                let label = 'Availability 24 h: ';
+                if (pct === undefined) {
+                    pct = list.filter(x => x.status === 1).length / list.length;
+                    label = 'Recent availability: ';
+                }
+                const p100 = Math.round(Number(pct) * 1000) / 10;
+                setCard(c.p, ok, ok ? '● ONLINE' : '● OFFLINE', ping, label + p100 + '%', Math.max(0, Math.min(100, p100)));
+            });
+        } catch (e) {
+            console.error('UniFi cards error:', e);
+            cards.forEach(c => setCard(c.p, false, '● Kuma unavailable', 'Latency: --', 'Availability --', 0));
+        }
+    }
+
+    // --- UNVR: cameras and alarm (official Protect API, through /unvr-api/) ---
+    async function fetchUnvrDetails() {
+        const camsEl = document.getElementById('unvr-cams');
+        const alarmEl = document.getElementById('unvr-alarm');
+        if (!camsEl || !alarmEl) return;
+        try {
+            const [cr, nr] = await Promise.all([fetch('/unvr-api/cameras'), fetch('/unvr-api/nvrs')]);
+            if (!cr.ok || !nr.ok) throw new Error('HTTP ' + cr.status + '/' + nr.status);
+            const cams = await cr.json();
+            const nvrs = await nr.json();
+            const total = cams.length;
+            const down = cams.filter(c => String(c.state).toUpperCase() !== 'CONNECTED');
+            camsEl.innerText = 'Cameras: ' + (total - down.length) + '/' + total + ' connected' +
+                (down.length ? ' (' + down.slice(0, 2).map(c => c.name).join(', ') + (down.length > 2 ? '…' : '') + ')' : '');
+            camsEl.style.color = down.length ? '#ff3355' : '#00ff88';
+            const nvr = Array.isArray(nvrs) ? nvrs[0] : nvrs;
+            const st = nvr && nvr.armMode && nvr.armMode.status ? String(nvr.armMode.status) : '';
+            const labels = { disarmed: 'Disarmed', armed: 'Armed', arming: 'Arming', disabled: 'Disabled', breach: 'Intrusion detected' };
+            const key = st.toLowerCase();
+            alarmEl.innerText = 'Alarm: ' + (labels[key] || st || 'unknown');
+            alarmEl.style.color = key === 'breach' ? '#ff3355' : key === 'armed' ? '#00ff88' : '';
+        } catch (e) {
+            console.error('UNVR details error:', e);
+            camsEl.innerText = 'Cameras: unavailable';
+            camsEl.style.color = '#ff3355';
+            alarmEl.innerText = 'Alarm: unavailable';
+            alarmEl.style.color = '#ff3355';
+        }
+    }
+
+    // --- Nextcloud ---
+    async function fetchNextcloud() {
+        const ncUrl = localStorage.getItem('nc_url');
+        const ncToken = localStorage.getItem('nc_token');
+        const light = document.getElementById('nc-light');
+        const versionEl = document.getElementById('nc-version');
+        const statusEl = document.getElementById('nc-status');
+        const storageEl = document.getElementById('nc-storage');
+        const storageBar = document.getElementById('nc-storage-bar');
+
+        if (!ncUrl || !ncToken) {
+            statusEl.className = '';
+            statusEl.innerHTML = '⚪ Not configured';
+            versionEl.innerText = 'Add the URL and the token below';
+            return;
+        }
+
+        try {
+            const response = await fetch(
+                `${ncUrl}/ocs/v2.php/apps/serverinfo/api/v1/info?format=json`,
+                {
+                    headers: {
+                        'OCS-APIRequest': 'true',
+                        'NC-Token': ncToken
+                    }
+                }
+            );
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+
+            const data = await response.json();
+            const info = data.ocs.data;
+
+            versionEl.innerText = `Nextcloud ${info.nextcloud.system.version}`;
+            statusEl.className = 'green';
+            statusEl.innerHTML = '● ONLINE';
+            light.style.background = '#00ff88';
+            light.style.boxShadow = '0 0 15px #00ff88';
+
+            const freespace = info.nextcloud.system.freespace;
+            const totalspaceApprox = freespace; // Nextcloud does not always give the total directly
+            const usersActive = info.activeUsers ? info.activeUsers.last24hours : '--';
+
+            storageEl.innerText = `${(freespace / (1024 ** 3)).toFixed(0)} GB free — ${usersActive} active users (24h)`;
+            storageBar.style.width = '50%'; // indicative value, without the exact percentage
+
+        } catch (error) {
+            console.error('Nextcloud error:', error);
+            statusEl.className = 'red';
+            statusEl.innerHTML = '● Connection error';
+            versionEl.innerText = '--';
+            light.style.background = '#ff3355';
+            light.style.boxShadow = '0 0 15px #ff3355';
+        }
+    }
+
+    // --- Ollama-Server: GPU (nvidia-smi) + models (ollama ps / ollama list) ---
+    // Everything goes through Nginx: /gpu-api/ (small gpu-stats service on the Ollama server)
+    // and /ollama-api/ (read only: tags, ps, version)
+    const olEsc = x => String(x).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const olNum = (v, d) => (v === null || v === undefined || isNaN(v)) ? '--' : Number(v).toFixed(d === undefined ? 0 : d);
+
+    function olLevel(pct, warn, crit) {
+        return pct >= crit ? 'ol-bad' : pct >= warn ? 'ol-warn' : 'ol-ok';
+    }
+
+    function olBar(pct, warn, crit) {
+        const c = pct >= crit ? '#ff3355' : pct >= warn ? '#ffc107' : '';
+        const w = Math.max(0, Math.min(100, pct || 0));
+        return '<div class="chart" style="margin:0 0 6px;"><span style="width:' + w + '%;' + (c ? 'background:' + c + ';' : '') + '"></span></div>';
+    }
+
+    function olBytes(b) {
+        if (b === null || b === undefined) return '--';
+        if (b >= 1e9) return (b / 1e9).toFixed(1) + ' GB';
+        if (b >= 1e6) return Math.round(b / 1e6) + ' MB';
+        return Math.round(b / 1e3) + ' KB';
+    }
+
+    function olAgo(iso) {
+        const d = new Date(iso);
+        if (isNaN(d)) return '--';
+        const min = Math.floor((Date.now() - d.getTime()) / 60000);
+        if (min < 1) return 'just now';
+        if (min < 60) return min + ' min ago';
+        const h = Math.floor(min / 60);
+        if (h < 24) return h + ' h ago';
+        const j = Math.floor(h / 24);
+        if (j < 60) return j + ' days ago';
+        return Math.floor(j / 30) + ' months ago';
+    }
+
+    function olUntil(iso) {
+        const d = new Date(iso);
+        if (isNaN(d)) return '--';
+        const min = Math.round((d.getTime() - Date.now()) / 60000);
+        if (min > 60 * 24 * 365) return 'Forever';
+        if (min < 1) return '< 1 min';
+        if (min < 60) return 'in ' + min + ' min';
+        return 'in ' + Math.floor(min / 60) + ' h ' + String(min % 60).padStart(2, '0');
+    }
+
+    function olLight(color) {
+        const l = document.getElementById('ol-light');
+        if (!l) return;
+        l.style.background = color;
+        l.style.boxShadow = '0 0 15px ' + color;
+    }
+
+    async function fetchOllamaGpu() {
+        const box = document.getElementById('ol-gpu');
+        if (!box) return;
+        try {
+            const r = await fetch('/gpu-api/', { cache: 'no-store' });
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            const d = await r.json();
+            if (!d.ok || !d.gpus || !d.gpus.length) throw new Error(d.error || 'no GPU');
+            document.getElementById('ol-driver').innerText = 'NVIDIA driver ' + (d.driver || '--');
+            let h = '';
+            d.gpus.forEach(g => {
+                const memPct = g.mem_total ? (g.mem_used / g.mem_total) * 100 : 0;
+                const powPct = g.power_limit ? (g.power / g.power_limit) * 100 : 0;
+                h += '<div class="ol-gpu-name">GPU ' + olEsc(g.index) + ' : ' + olEsc(g.name) + '</div>';
+                h += '<div class="ol-kv"><span class="k">Temperature</span><span class="v ' + olLevel(g.temp, 75, 85) + '">' + olNum(g.temp) + ' °C</span></div>';
+                h += '<div class="ol-kv"><span class="k">Usage</span><span class="v ' + olLevel(g.util_gpu, 90, 101) + '">' + olNum(g.util_gpu) + ' %</span></div>';
+                h += olBar(g.util_gpu, 90, 101);
+                h += '<div class="ol-kv"><span class="k">VRAM</span><span class="v ' + olLevel(memPct, 85, 95) + '">' + olNum(g.mem_used) + ' / ' + olNum(g.mem_total) + ' MiB (' + olNum(memPct) + ' %)</span></div>';
+                h += olBar(memPct, 85, 95);
+                h += '<div class="ol-kv"><span class="k">Power</span><span class="v">' + olNum(g.power, 0) + ' W / ' + olNum(g.power_limit, 0) + ' W</span></div>';
+                h += olBar(powPct, 90, 101);
+                h += '<div class="ol-kv"><span class="k">Fan</span><span class="v">' + olNum(g.fan) + ' %</span></div>';
+                h += '<div class="ol-kv"><span class="k">State (P-state)</span><span class="v">' + olEsc(g.pstate || '--') + '</span></div>';
+                h += '<div class="ol-kv"><span class="k">Clock</span><span class="v">' + olNum(g.clock_sm) + ' / ' + olNum(g.clock_sm_max) + ' MHz</span></div>';
+            });
+            h += '<div class="ol-sub">GPU processes</div>';
+            if (d.processes && d.processes.length) {
+                h += '<table class="ol-tbl"><thead><tr><th>PID</th><th>Process</th><th>VRAM</th></tr></thead><tbody>';
+                d.processes.forEach(pr => {
+                    h += '<tr><td>' + olEsc(pr.pid) + '</td><td>' + olEsc(pr.name) + '</td><td>' + olNum(pr.mem) + ' MiB</td></tr>';
+                });
+                h += '</tbody></table>';
+            } else {
+                h += '<p class="ol-msg">No process on the GPU (model unloaded)</p>';
+            }
+            box.innerHTML = h;
+        } catch (e) {
+            console.error('Ollama-Server GPU:', e);
+            box.innerHTML = '<p class="ol-bad">GPU statistics unavailable (' + olEsc(e.message) + ').<br>Check the gpu-stats service on the Ollama server and the relay /gpu-api/.</p>';
+        }
+    }
+
+    async function fetchOllamaModels() {
+        const psBox = document.getElementById('ol-ps');
+        const listBox = document.getElementById('ol-list');
+        const statusEl = document.getElementById('ol-status');
+        if (!psBox || !listBox) return;
+        try {
+            const [tr, pr, vr] = await Promise.all([
+                fetch('/ollama-api/tags', { cache: 'no-store' }),
+                fetch('/ollama-api/ps', { cache: 'no-store' }),
+                fetch('/ollama-api/version', { cache: 'no-store' }).catch(() => null)
+            ]);
+            if (!tr.ok) throw new Error('HTTP ' + tr.status);
+            const tags = (await tr.json()).models || [];
+            const ps = pr.ok ? ((await pr.json()).models || []) : [];
+            if (vr && vr.ok) {
+                const v = await vr.json();
+                document.getElementById('ol-version').innerText = 'Ollama ' + (v.version || '--');
+            }
+            statusEl.className = 'green';
+            statusEl.innerHTML = '● ONLINE &mdash; ' + ps.length + ' model(s) loaded, ' + tags.length + ' installed';
+            olLight('#00ff88');
+
+            if (ps.length) {
+                let h = '<table class="ol-tbl"><thead><tr><th>NAME</th><th>SIZE</th><th>PROCESSOR</th><th>CONTEXT</th><th>UNTIL</th></tr></thead><tbody>';
+                ps.forEach(m => {
+                    const gpuPct = m.size ? Math.round((m.size_vram / m.size) * 100) : 0;
+                    const proc = gpuPct >= 100 ? '100% GPU' : gpuPct <= 0 ? '100% CPU' : (100 - gpuPct) + '%/' + gpuPct + '% CPU/GPU';
+                    const cls = gpuPct >= 100 ? 'ol-ok' : 'ol-warn';
+                    h += '<tr><td>' + olEsc(m.name) + '</td><td>' + olBytes(m.size) + '</td><td class="' + cls + '">' + proc + '</td><td>' +
+                        (m.context_length ? olEsc(m.context_length) : '--') + '</td><td>' + olUntil(m.expires_at) + '</td></tr>';
+                });
+                h += '</tbody></table>';
+                psBox.innerHTML = h;
+            } else {
+                psBox.innerHTML = '<p class="ol-msg">No model in memory right now (it reloads on the next request)</p>';
+            }
+
+            if (tags.length) {
+                tags.sort((a, b) => new Date(b.modified_at) - new Date(a.modified_at));
+                let h = '<table class="ol-tbl"><thead><tr><th>NAME</th><th>ID</th><th>SIZE</th><th>PARAMS</th><th>QUANT</th><th>MODIFIED</th></tr></thead><tbody>';
+                tags.forEach(m => {
+                    const dt = m.details || {};
+                    h += '<tr><td>' + olEsc(m.name) + '</td><td>' + olEsc((m.digest || '').slice(0, 12)) + '</td><td>' + olBytes(m.size) + '</td><td>' +
+                        olEsc(dt.parameter_size || '--') + '</td><td>' + olEsc(dt.quantization_level || '--') + '</td><td>' + olAgo(m.modified_at) + '</td></tr>';
+                });
+                h += '</tbody></table>';
+                listBox.innerHTML = h;
+            } else {
+                listBox.innerHTML = '<p class="ol-msg">No model installed</p>';
+            }
+        } catch (e) {
+            console.error('Ollama:', e);
+            statusEl.className = 'red';
+            statusEl.innerHTML = '● Ollama unreachable (' + olEsc(e.message) + ')';
+            olLight('#ff3355');
+            psBox.innerHTML = '<p class="ol-bad">Unavailable. Check the relay /ollama-api/ in Nginx.</p>';
+            listBox.innerHTML = '<p class="ol-bad">Unavailable.</p>';
+        }
+    }
+
+    fetchHomeAssistant();
+    fetchNextcloud();
+    setInterval(fetchHomeAssistant, 15000);
+    setInterval(fetchNextcloud, 30000);
+    fetchGooglePing();
+    setInterval(fetchGooglePing, 30000);
+    fetchLanPing();
+    setInterval(fetchLanPing, 30000);
+    fetchUnifiCards();
+    setInterval(fetchUnifiCards, 30000);
+    fetchUnvrDetails();
+    setInterval(fetchUnvrDetails, 30000);
+    fetchOllamaGpu();
+    setInterval(() => { if (!document.hidden) fetchOllamaGpu(); }, 5000);
+    fetchOllamaModels();
+    setInterval(() => { if (!document.hidden) fetchOllamaModels(); }, 15000);
+});
+</script>
+
+</html>

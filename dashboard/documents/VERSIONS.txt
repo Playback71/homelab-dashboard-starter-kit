@@ -1,0 +1,5 @@
+VERSIONS.txt : log of every change to the dashboard (example)
+
+2026-11-17  v2026.11.17-1
+------------------------
+Site : first install of the dashboard example (MY HOMELAB starter kit).

@@ -1,0 +1,59 @@
+You are helping me build a home-made dashboard for my homelab, plus a morning report
+written by a local AI that diagnoses problems and proposes fixes. This idea already works
+in another homelab. Reuse its ideas and the reasons behind them, but adapt everything to
+MY hardware and MY preferences, which are in my filled-in questionnaire
+(1_FILL_IN_FIRST.txt) in the Project knowledge. Read it before answering.
+Do not copy the other setup blindly.
+
+--- GOAL ---
+1. A web dashboard (plain HTML/JavaScript pages) showing live status: servers, NAS, disks,
+   backups, network, firewall, updates.
+2. A morning report: every night a scheduled workflow checks every system, fixed rules
+   decide the status, and a local LLM writes a short diagnosis and a fix with commands
+   ready to copy-paste.
+3. Access from the phone without exposing anything to the internet.
+
+--- REFERENCE ARCHITECTURE (adapt it) ---
+- Nginx: serves the dashboard and acts as a relay (reverse proxy) to each device's API.
+  The browser only talks to Nginx, so devices are never exposed and API keys stay on
+  the server, never in the web pages.
+- Glances on each NAS/server: live CPU, RAM, disks, network, containers.
+- Uptime Kuma: is each device and service responding.
+- n8n (the heart): a scheduled workflow pulls data from every API (hypervisor, firewall,
+  NAS, network gear, home automation...), applies rules, calls the local AI, saves the report.
+- Loki + Grafana (+ Alloy): firewall and IDS logs, attacks and blocks.
+- Ollama on a GPU: the local model that writes the report. Nothing leaves the house.
+- WireGuard: remote access from the phone, opening a single address and port.
+
+--- DESIGN PRINCIPLES (and why) ---
+1. The AI never decides the status. Fixed rules in code set OK / WARN / CRIT.
+   Why: a model can be wrong or too optimistic; it must never hide an alert.
+2. The AI only receives verified facts, plus a short description of each device.
+   Why: when the model only gets a name like "NordVPN Server", it invents. It once
+   treated a remote VPN server as a box in the rack and made up a date from 2024.
+   Give it what the device is, where it is, and the real times from the logs.
+3. Strict JSON answer: diagnosis, 2 causes max, read-only checks, suggestion, fix
+   (command + risk). Why: short, comparable, easy to check, easy to display.
+4. One rule per system in the prompt, added each time an answer is wrong.
+   Why: that's how a small model becomes reliable.
+5. Small local model over big model. The project started with Phi-4, then 10 models
+   were tested with the exact same question and data. Some invented commands, others
+   wrote far too much. The winner was a small one (Ministral-3 on an RTX 3060 12 GB,
+   about 50 tokens/s) with good rules around it.
+6. Outage diagnosis as a chain, from the inside out: switch > firewall > ISP modem >
+   ISP network (ping 8.8.8.8 straight over the WAN, read from the firewall) > VPN.
+   The lowest link that fails is the cause; everything above is a consequence.
+   Plus an outage log that keeps the order of failures for 30 days.
+7. Every file has a version line at the top (vYYYY.MM.DD-N) and a VERSIONS.txt log.
+   Why: you always know what is installed and what changed.
+
+--- HOW TO WORK WITH ME ---
+Follow my answers in Part 2 of the questionnaire. In any case:
+- Never ask me to paste passwords, tokens or API keys in the chat. Tell me where to
+  put them myself.
+- Prefer read-only checks first, and warn me before anything that can cut the network.
+- Start by summarizing my setup in a few lines, then propose a short plan in steps,
+  beginning with what I said I want first.
+
+----------------------------------------------------------------------
+Built by Playback71 (MY HOMELAB project), with the help of Claude (Anthropic) - November 2026

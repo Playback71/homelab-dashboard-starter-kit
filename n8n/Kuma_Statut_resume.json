@@ -1,0 +1,134 @@
+{
+  "name": "Kuma - Statut résumé",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "40cea791-a177-4dad-9b23-685bdf78a6d0",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "url": "https://DOMAINE_1.example/api/status-page/homelab",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        224,
+        0
+      ],
+      "id": "cbf04eb2-7296-4be7-960b-59e9f141e827",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "url": "https://DOMAINE_1.example/api/status-page/heartbeat/homelab",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        224,
+        224
+      ],
+      "id": "69f86403-3e41-4ce2-9316-1b12455552fe",
+      "name": "HTTP Request1"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        448,
+        0
+      ],
+      "id": "3b3a765a-7266-455f-abb8-625df7528bc1",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst configItem = items.find(i => i.json.publicGroupList)?.json;\nconst heartbeatItem = items.find(i => i.json.uptimeList || i.json.heartbeatList)?.json;\n\nconst idToName = {};\nfor (const group of configItem?.publicGroupList || []) {\n  for (const m of group.monitorList || []) {\n    idToName[m.id] = m.name;\n  }\n}\n\nconst uptimeList = heartbeatItem?.uptimeList || {};\nconst heartbeatList = heartbeatItem?.heartbeatList || {};\n\nconst monitors = Object.keys(idToName).map(id => {\n  const uptime = uptimeList[`${id}_24`];\n  const hb = heartbeatList[id] || [];\n  const last = hb[hb.length - 1];\n  return {\n    name: idToName[id],\n    status: last ? (last.status === 1 ? \"up\" : \"down\") : \"unknown\",\n    uptime24h: uptime != null ? Math.round(uptime * 1000) / 10 : null,\n  };\n});\n\nreturn [{ json: { monitors } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ],
+      "id": "df6d74fd-8513-4f70-a96e-1a4045d1d8d6",
+      "name": "Code in JavaScript"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "358e5baa-a5d9-412a-8f06-faeed3b7867c",
+  "meta": {
+    "instanceId": "8130f57fae415683139811b2d51638f30d2fd4c001e5e0928ad85efb2ab9daa5"
+  },
+  "nodeGroups": [],
+  "id": "wZPoA9lHH7wQMp9Z",
+  "tags": []
+}

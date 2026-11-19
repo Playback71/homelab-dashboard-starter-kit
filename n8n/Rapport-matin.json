@@ -1,0 +1,107 @@
+{
+  "name": "Rapport-matin",
+  "nodes": [
+    {
+      "parameters": {
+        "url": "http://localhost:5678/api/v1/data-tables/JYm2ZPLBxSODqIRX/rows?limit=1&sortBy=createdAt%3Adesc",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        224,
+        0
+      ],
+      "id": "42eadf92-5670-4929-b520-eb949d6da901",
+      "name": "HTTP Request",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "AUbqIUv4yaWKGjX6",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "path": "a1fca13c-89cd-44de-9870-454fd0e27482",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "0f30e327-6f66-491c-be83-510441eb9ae5",
+      "name": "rapport-matin",
+      "webhookId": "a1fca13c-89cd-44de-9870-454fd0e27482"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.data[0].html_content }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        432,
+        0
+      ],
+      "id": "634460c1-f80e-42d5-b66a-6966ee23e83d",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "rapport-matin": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "d0053e76-c2de-4cc4-8216-2512a98aacb8",
+  "meta": {
+    "instanceId": "8130f57fae415683139811b2d51638f30d2fd4c001e5e0928ad85efb2ab9daa5"
+  },
+  "nodeGroups": [],
+  "id": "PIxctChistdCUexn",
+  "tags": []
+}

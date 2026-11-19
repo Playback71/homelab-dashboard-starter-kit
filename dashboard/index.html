@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<!-- index.html : v2026.11.17-4 : English version (MY HOMELAB starter kit). Home page: TrueNAS and Synology (Glances), NOC summary, deadlines, external access -->
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My HomeLab Dashboard</title>
+    <link rel="stylesheet" href="./css/style.css">
+    <!-- Font Awesome icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<style id="zoom-mobile">@media (max-width:900px){html{zoom:0.9}.cards{grid-template-columns:repeat(2,1fr);gap:12px}.card{padding:14px;border-radius:14px}.card i{font-size:26px;margin-bottom:8px}.card h2{font-size:15px;margin-bottom:8px}.number{font-size:26px}.card p{font-size:12px}.panel{padding:16px}}</style>
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+</head>
+
+
+<body>
+<div class="background"></div>
+<div class="overlay"></div>
+
+<header>
+    <div class="logo">
+        <i class="fa-solid fa-server"></i>
+        <span>MY HOMELAB</span>
+    </div>
+
+    <nav>
+        <a class="active" href="index.html"><i class="fa-solid fa-gauge"></i> Dashboard</a>
+        <a href="documentation.html"><i class="fa-solid fa-book"></i> Documentation</a>
+        <a href="journal.html"><i class="fa-solid fa-clock-rotate-left"></i> Journal</a>
+        <a href="reseau.html"><i class="fa-solid fa-network-wired"></i> Network</a>
+        <a href="supervision.html"><i class="fa-solid fa-eye"></i> Supervision</a>
+        <a href="proxmox.html"><i class="fa-solid fa-layer-group"></i> Proxmox</a>
+        <a href="pfsense.html"><i class="fa-solid fa-shield-halved"></i> pfSense</a>
+    </nav>
+
+    <div class="time">
+        <i class="fa-regular fa-clock"></i>
+        <span id="clock">00:00:00</span>
+    </div>
+</header>
+
+<main>
+    <section class="hero">
+        <h1>HOME LAB CONTROL CENTER</h1>
+        <p>Infrastructure Monitoring Dashboard</p>
+        <div class="online">
+            <i class="fa-solid fa-circle"></i> <span id="status-text">All systems operational</span>
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2><i class="fa-solid fa-server"></i> TrueNAS</h2>
+        <div class="cards compact">
+            <!-- ANIMATED CPU -->
+            <div class="card">
+                <i class="fa-solid fa-microchip"></i>
+                <h2>CPU</h2>
+                <div id="cpu-val" class="number">--%</div>
+                <div class="bar">
+                    <span id="cpu-bar" style="width:0%"></span>
+                </div>
+            </div>
+
+            <!-- ANIMATED RAM -->
+            <div class="card">
+                <i class="fa-solid fa-memory"></i>
+                <h2>RAM</h2>
+                <div id="ram-val" class="number">--%</div>
+                <div class="bar">
+                    <span id="ram-bar" style="width:0%"></span>
+                </div>
+            </div>
+
+            <!-- ANIMATED TEMPERATURE (TrueNAS) -->
+            <div class="card">
+                <i class="fa-solid fa-temperature-half"></i>
+                <h2>Temperature</h2>
+                <div id="temp-val" class="number">--°C</div>
+                <p>Servers normal</p>
+            </div>
+
+            <!-- NETWORK (upload / download rate) -->
+            <div class="card">
+                <i class="fa-solid fa-network-wired"></i>
+                <h2>NETWORK</h2>
+                <div id="net-val" class="number">-- Mb/s</div>
+                <p><i class="fa-solid fa-arrow-down"></i> <span id="net-down">--</span> &nbsp; <i class="fa-solid fa-arrow-up"></i> <span id="net-up">--</span></p>
+            </div>
+
+            <!-- NAS STORAGE (data pool, not the boot-pool) -->
+            <div class="card">
+                <i class="fa-solid fa-database"></i>
+                <h2>NAS STORAGE</h2>
+                <div id="nas-free" class="number">-- free</div>
+                <div class="bar">
+                    <span id="nas-bar" style="width:0%"></span>
+                </div>
+            </div>
+
+            <!-- DISKS (SMART, pools): js/sante.js -->
+            <div class="card">
+                <i class="fa-solid fa-hard-drive"></i>
+                <h2>Disks</h2>
+                <div id="tn-disk-val" class="number">--</div>
+                <p id="tn-disk-detail">Loading…</p>
+            </div>
+
+            <!-- BACKUPS: js/sante.js -->
+            <div class="card">
+                <i class="fa-solid fa-clock-rotate-left"></i>
+                <h2>Backups</h2>
+                <div id="tn-bkp-val" class="number">--</div>
+                <p id="tn-bkp-detail">Loading…</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2><i class="fa-brands fa-synology"></i> Synology NAS</h2>
+        <div class="cards compact">
+            <!-- SYNOLOGY CPU -->
+            <div class="card">
+                <i class="fa-solid fa-microchip"></i>
+                <h2>CPU</h2>
+                <div id="syno-cpu-val" class="number">--%</div>
+                <div class="bar">
+                    <span id="syno-cpu-bar" style="width:0%"></span>
+                </div>
+            </div>
+
+            <!-- SYNOLOGY RAM -->
+            <div class="card">
+                <i class="fa-solid fa-memory"></i>
+                <h2>RAM</h2>
+                <div id="syno-ram-val" class="number">--%</div>
+                <div class="bar">
+                    <span id="syno-ram-bar" style="width:0%"></span>
+                </div>
+            </div>
+
+            <!-- SYNOLOGY TEMPERATURE -->
+            <div class="card">
+                <i class="fa-solid fa-temperature-half"></i>
+                <h2>Temperature</h2>
+                <div id="syno-temp-val" class="number">--°C</div>
+                <p id="syno-load" class="tiny">Load: --</p>
+            </div>
+
+            <!-- SYNOLOGY NETWORK -->
+            <div class="card">
+                <i class="fa-solid fa-network-wired"></i>
+                <h2>NETWORK</h2>
+                <div id="syno-net-val" class="number">-- Mb/s</div>
+                <p><i class="fa-solid fa-arrow-down"></i> <span id="syno-net-down">--</span> &nbsp; <i class="fa-solid fa-arrow-up"></i> <span id="syno-net-up">--</span></p>
+            </div>
+
+            <!-- SYNOLOGY STORAGE -->
+            <div class="card">
+                <i class="fa-solid fa-database"></i>
+                <h2>Storage</h2>
+                <div id="syno-storage-free" class="number">-- free</div>
+                <div class="bar">
+                    <span id="syno-storage-bar" style="width:0%"></span>
+                </div>
+            </div>
+
+            <!-- SYNOLOGY DOCKER CONTAINERS -->
+            <div class="card">
+                <i class="fa-brands fa-docker"></i>
+                <h2>Containers</h2>
+                <div id="syno-containers-val" class="number">--/--</div>
+                <p id="syno-containers-detail" class="tiny">Loading…</p>
+            </div>
+
+            <!-- DISKS (SMART, pools): js/sante.js -->
+            <div class="card">
+                <i class="fa-solid fa-hard-drive"></i>
+                <h2>Disks</h2>
+                <div id="syno-disk-val" class="number">--</div>
+                <p id="syno-disk-detail">Loading…</p>
+            </div>
+
+            <!-- BACKUPS: js/sante.js -->
+            <div class="card">
+                <i class="fa-solid fa-clock-rotate-left"></i>
+                <h2>Backups</h2>
+                <div id="syno-bkp-val" class="number">--</div>
+                <p id="syno-bkp-detail">Loading…</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2><i class="fa-solid fa-eye"></i> NOC Monitoring</h2>
+        <div class="cards">
+            <div class="card">
+                <i class="fa-solid fa-circle-check"></i>
+                <h2>Network</h2>
+                <div class="number" id="noc-net-val">--</div>
+                <p id="noc-net-detail">Loading…</p>
+            </div>
+            <div class="card">
+                <i class="fa-solid fa-shield-halved"></i>
+                <h2>Security</h2>
+                <div class="number" id="noc-sec-val">--</div>
+                <p id="noc-sec-detail">Loading…</p>
+                <p id="noc-sec-blocks"></p>
+            </div>
+            <!-- DEADLINES and RESTORE TEST: js/echeances.js (file echeances.json, edited by hand) -->
+            <div class="card">
+                <i class="fa-solid fa-calendar-days"></i>
+                <h2>Deadlines</h2>
+                <div class="number" id="ech-val">--</div>
+                <p id="ech-detail">Loading…</p>
+            </div>
+            <div class="card">
+                <i class="fa-solid fa-rotate-left"></i>
+                <h2>Restore test</h2>
+                <div class="number" id="rest-val">--</div>
+                <p id="rest-detail">Loading…</p>
+            </div>
+            <!-- EXTERNAL ACCESS: js/acces-externe.js (relay /n8n-tunnels/ to the n8n workflow "Statut tunnels et VPN") -->
+            <div class="card">
+                <i class="fa-solid fa-cloud"></i>
+                <h2>External access</h2>
+                <div class="number" id="acces-val">--</div>
+                <p id="acces-detail">Loading…</p>
+            </div>
+        </div>
+        <br>
+        <a href="supervision.html" class="online"><i class="fa-solid fa-eye"></i> Open NOC supervision</a>
+    </section>
+
+</main>
+
+<footer>MY HOMELAB © 2026</footer>
+
+<script src="./js/app.js"></script>
+<script src="./js/noc-cards.js"></script>
+<script src="./js/sante.js?v=2026.11.17-1"></script>
+<script src="./js/echeances.js?v=2026.11.17-1"></script>
+<script src="./js/acces-externe.js?v=2026.11.17-1"></script>
+
+<!-- MONITORING THROUGH GLANCES -->
+<script>
+    // Local IP config (replace with your own addresses)
+    const TRUENAS_IP = "192.168.100.10";   // <- your TrueNAS
+    const SYNOLOGY_IP = "192.168.100.11";   // <- your Synology
+
+    // Storage bar color by % used (same as the TrueNAS alert thresholds):
+    // green < 80%, red >= 80% (critical)
+    function storageBarColor(percent) {
+        if (percent >= 80) return '#e74c3c'; // red - critical
+        return '#2ecc71'; // vert - normal
+    }
+
+    // 1. System clock
+    function updateClock() {
+        const now = new Date();
+        // .split(' ') returns an array: take index [0]
+        document.getElementById('clock').innerText = now.toTimeString().split(' ')[0];
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    // 2. Request to the Glances API
+    async function updateDashboardMetrics() {
+        try {
+            const response = await fetch('/glances-truenas/api/4/all');
+            if (!response.ok) throw new Error("Invalid API response");
+            const data = await response.json();
+
+            // CPU calculation
+            if (data.cpu) {
+                const cpuUsage = Math.round(data.cpu.total);
+                document.getElementById('cpu-val').innerText = cpuUsage + '%';
+                document.getElementById('cpu-bar').style.width = cpuUsage + '%';
+            }
+
+            // RAM calculation
+            if (data.mem) {
+                const ramPercent = Math.round(data.mem.percent);
+                document.getElementById('ram-val').innerText = ramPercent + '%';
+                document.getElementById('ram-bar').style.width = ramPercent + '%';
+            }
+
+            // CPU temperature
+            if (data.sensors && data.sensors.length > 0) {
+                const cpuTempSensor = data.sensors.find(s => s.label && (s.label.toLowerCase().includes('cpu') || s.label.toLowerCase().includes('package') || s.label.toLowerCase().includes('core')));
+                if (cpuTempSensor) {
+                    document.getElementById('temp-val').innerText = Math.round(cpuTempSensor.value) + '°C';
+                } else {
+                    // data.sensors is an array: take index [0]
+                    document.getElementById('temp-val').innerText = Math.round(data.sensors[0].value) + '°C';
+                }
+            }
+
+            // Disk space (NAS STORAGE only)
+            if (data.fs && data.fs.length > 0) {
+
+                function formatBytes(rawBytes) {
+                    const bytes = parseFloat(rawBytes);
+                    if (isNaN(bytes) || bytes <= 0) return "-- GB";
+                    if (bytes >= Math.pow(1024, 4)) {
+                        return (bytes / Math.pow(1024, 4)).toFixed(1) + ' TB';
+                    } else {
+                        return (bytes / Math.pow(1024, 3)).toFixed(0) + ' GB';
+                    }
+                }
+
+                // NAS STORAGE -> the whole ZFS pool "volume1".
+                // In ZFS, each dataset (volume1, Proxmox, Backup_ha, etc.) reports ONLY its
+                // own direct usage, never the pool total - so no line of data.fs
+                // matches the "2.84 TiB / 3.62 TB" shown in the TrueNAS interface.
+                // The "free" field however IS shared by all datasets of the pool,
+                // so we read it on the root mount point and compute the % ourselves
+                // with the real total size of the pool (from "zpool list" / "zfs list").
+                // Put YOUR pool size in bytes below, and YOUR mount point.
+                const TRUENAS_POOL_TOTAL_BYTES = 3861793939456; // volume1 : ~3.62 TB (3.51 TiB) total
+                const nasDisk = data.fs.find(f => f.mnt_point === '/mnt/volume1')
+                    || data.fs.find(f => f.device_name === 'volume1')
+                    || data.fs.find(f => f.device_name && f.device_name.toLowerCase().includes('volume1'));
+
+                if (nasDisk) {
+                    const nasFree = nasDisk.free;
+                    const nasPercent = Math.max(0, Math.min(100,
+                        ((TRUENAS_POOL_TOTAL_BYTES - nasFree) / TRUENAS_POOL_TOTAL_BYTES) * 100
+                    ));
+                    document.getElementById('nas-free').innerText = formatBytes(nasFree) + ' free';
+                    document.getElementById('nas-bar').style.width = nasPercent + '%';
+                    document.getElementById('nas-bar').style.background = storageBarColor(nasPercent);
+                } else {
+                    document.getElementById('nas-free').innerText = "-- free";
+                }
+            }
+
+            // Network rate
+            if (data.network && data.network.length > 0) {
+                // Add up the physical interfaces, skip loopback / internal docker interfaces
+                const interfaces = data.network.filter(n =>
+                    n.interface_name &&
+                    !n.interface_name.toLowerCase().includes('lo') &&
+                    !n.interface_name.toLowerCase().includes('docker') &&
+                    !n.interface_name.toLowerCase().includes('veth')
+                );
+
+                let totalDownBps = 0;
+                let totalUpBps = 0;
+                interfaces.forEach(n => {
+                    // Glances v4 often exposes bytes_recv_rate_per_sec / bytes_sent_rate_per_sec
+                    totalDownBps += n.bytes_recv_rate_per_sec || 0;
+                    totalUpBps += n.bytes_sent_rate_per_sec || 0;
+                });
+
+                function formatMbps(bytesPerSec) {
+                    const mbps = (bytesPerSec * 8) / 1_000_000; // bytes/s -> megabits/s
+                    return mbps.toFixed(1) + ' Mb/s';
+                }
+
+                document.getElementById('net-down').innerText = formatMbps(totalDownBps);
+                document.getElementById('net-up').innerText = formatMbps(totalUpBps);
+                document.getElementById('net-val').innerText = formatMbps(totalDownBps + totalUpBps);
+            }
+
+            document.getElementById('status-text').innerText = "All systems operational";
+
+        } catch (error) {
+            console.error("Error while reading the Glances metrics:", error);
+            document.getElementById('status-text').innerText = "Connection error with the Glances API";
+        }
+    }
+
+    // Refresh every 3 seconds
+    setInterval(updateDashboardMetrics, 3000);
+    updateDashboardMetrics();
+
+    // 3. Request to the Synology Glances API
+    function formatBytesGeneric(rawBytes) {
+        const bytes = parseFloat(rawBytes);
+        if (isNaN(bytes) || bytes <= 0) return "-- GB";
+        if (bytes >= Math.pow(1024, 4)) {
+            return (bytes / Math.pow(1024, 4)).toFixed(1) + ' TB';
+        } else {
+            return (bytes / Math.pow(1024, 3)).toFixed(0) + ' GB';
+        }
+    }
+
+    async function updateSynologyMetrics() {
+        try {
+            const response = await fetch('/glances-syno/api/4/all');
+            if (!response.ok) throw new Error("Invalid Synology API response");
+            const data = await response.json();
+
+            // CPU
+            if (data.cpu) {
+                const cpuUsage = Math.round(data.cpu.total);
+                document.getElementById('syno-cpu-val').innerText = cpuUsage + '%';
+                document.getElementById('syno-cpu-bar').style.width = cpuUsage + '%';
+            }
+
+            // RAM
+            if (data.mem) {
+                const ramPercent = Math.round(data.mem.percent);
+                document.getElementById('syno-ram-val').innerText = ramPercent + '%';
+                document.getElementById('syno-ram-bar').style.width = ramPercent + '%';
+            }
+
+            // Temperature (first core/package sensor)
+            if (data.sensors && data.sensors.length > 0) {
+                const cpuTempSensor = data.sensors.find(s => s.label && (s.label.toLowerCase().includes('cpu') || s.label.toLowerCase().includes('package') || s.label.toLowerCase().includes('core')));
+                const tempValue = cpuTempSensor ? cpuTempSensor.value : data.sensors[0].value;
+                document.getElementById('syno-temp-val').innerText = Math.round(tempValue) + '°C';
+            }
+
+            // System load (load average 1 min)
+            if (data.load) {
+                document.getElementById('syno-load').innerText = `Load: ${data.load.min1.toFixed(2)} / ${data.load.min5.toFixed(2)} / ${data.load.min15.toFixed(2)}`;
+            }
+
+            // Network rate (skip loopback, docker, veth, as for the TrueNAS)
+            if (data.network && data.network.length > 0) {
+                const interfaces = data.network.filter(n =>
+                    n.interface_name &&
+                    !n.interface_name.toLowerCase().includes('lo') &&
+                    !n.interface_name.toLowerCase().includes('docker') &&
+                    !n.interface_name.toLowerCase().includes('veth')
+                );
+
+                let totalDownBps = 0;
+                let totalUpBps = 0;
+                interfaces.forEach(n => {
+                    totalDownBps += n.bytes_recv_rate_per_sec || 0;
+                    totalUpBps += n.bytes_sent_rate_per_sec || 0;
+                });
+
+                function formatMbpsSyno(bytesPerSec) {
+                    const mbps = (bytesPerSec * 8) / 1_000_000;
+                    return mbps.toFixed(1) + ' Mb/s';
+                }
+
+                document.getElementById('syno-net-down').innerText = formatMbpsSyno(totalDownBps);
+                document.getElementById('syno-net-up').innerText = formatMbpsSyno(totalUpBps);
+                document.getElementById('syno-net-val').innerText = formatMbpsSyno(totalDownBps + totalUpBps);
+            }
+
+            // Main storage (root volume of the NAS, not the internal mount points)
+            if (data.fs && data.fs.length > 0) {
+                const nasDisk = data.fs.find(f => f.mnt_point === '/') || data.fs[0];
+                if (nasDisk) {
+                    const synoPercent = nasDisk.percent || 0;
+                    document.getElementById('syno-storage-free').innerText = formatBytesGeneric(nasDisk.free) + ' free';
+                    document.getElementById('syno-storage-bar').style.width = synoPercent + '%';
+                    document.getElementById('syno-storage-bar').style.background = storageBarColor(synoPercent);
+                }
+            }
+
+            // Docker containers: total vs healthy/running
+            if (data.containers && data.containers.length > 0) {
+                const total = data.containers.length;
+                const healthy = data.containers.filter(c => c.status === 'running' || c.status === 'healthy').length;
+                document.getElementById('syno-containers-val').innerText = `${healthy}/${total}`;
+                const names = data.containers.map(c => c.name).join(', ');
+                document.getElementById('syno-containers-detail').innerText = names;
+            }
+
+        } catch (error) {
+            console.error("Error while reading the Synology metrics:", error);
+            document.getElementById('syno-cpu-val').innerText = "Err";
+        }
+    }
+
+    setInterval(updateSynologyMetrics, 3000);
+    updateSynologyMetrics();
+</script>
+<script src="./js/fit-page.js"></script>
+</body>
+</html>

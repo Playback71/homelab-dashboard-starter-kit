@@ -1,0 +1,127 @@
+{
+  "name": "Journal des pannes",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes"
+            }
+          ]
+        }
+      },
+      "id": "7f63f589-8be7-4159-8c66-a81249c5a090",
+      "name": "Toutes les 5 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1056,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// v2026.11.16-2 : Journal des pannes : mise à jour (toutes les 5 minutes)\n// Lit la page de statut « homelab » de Uptime Kuma et note chaque appareil qui tombe (down) ou qui revient (up),\n// avec l'heure exacte du battement Kuma. Le journal est gardé 30 jours dans la mémoire du workflow (static data).\n// Rien à modifier ici, sauf l'adresse de Kuma si elle change.\nconst KUMA = 'http://IP_PRIVEE_4:PORT_3/api/status-page/';\nconst PAGE = 'homelab';\nconst JOURS_GARDES = 30;\nconst MAX_EVENEMENTS = 8000;\n// Les battements d'avant cette heure sont ignorés (réglage du moniteur ISP le 16 nov. : fausses pannes)\nconst DEBUT_JOURNAL = Date.parse('2026-11-16T05:30:00-05:00');\n\nconst lire = async (chemin) => {\n  const r = await this.helpers.httpRequest({ method: 'GET', url: KUMA + chemin, json: true, timeout: 20000 });\n  return typeof r === 'string' ? JSON.parse(r) : r;\n};\n\n// Heure Kuma « 2026-11-16 08:54:12.123 » (UTC) en millisecondes\nconst temps = (s) => Date.parse(String(s).trim().replace(' ', 'T') + (/[zZ]|[+-]\\d\\d:?\\d\\d$/.test(s) ? '' : 'Z'));\n\nconst sd = $getWorkflowStaticData('global');\nsd.dernier = sd.dernier || {};       // par moniteur : { t: dernier battement lu, etat: 'up' | 'down' }\nsd.evenements = sd.evenements || []; // { t, id, nom, etat }\nsd.noms = sd.noms || {};\n\nconst [info, hb] = await Promise.all([lire(PAGE), lire('heartbeat/' + PAGE)]);\n(info.publicGroupList || []).forEach((g) => (g.monitorList || []).forEach((m) => { sd.noms[String(m.id)] = m.name; }));\nconst listes = (hb && hb.heartbeatList) || {};\n\nlet ajoutes = 0;\nObject.keys(listes).forEach((id) => {\n  const nom = sd.noms[id] || ('Moniteur ' + id);\n  const d = sd.dernier[id] || { t: 0, etat: null };\n  const battements = (listes[id] || [])\n    .map((b) => ({ t: temps(b.time), s: b.status }))\n    .filter((b) => !isNaN(b.t) && b.t > d.t && b.t >= DEBUT_JOURNAL && (b.s === 0 || b.s === 1))   // 2 = en attente, 3 = maintenance : ignorés\n    .sort((a, b) => a.t - b.t);\n  battements.forEach((b) => {\n    const etat = b.s === 1 ? 'up' : 'down';\n    // Premier battement jamais lu : on ne note qu'une panne déjà en cours\n    if (d.etat === null ? etat === 'down' : etat !== d.etat) {\n      sd.evenements.push({ t: b.t, id: id, nom: nom, etat: etat });\n      ajoutes++;\n    }\n    d.etat = etat;\n    d.t = b.t;\n  });\n  sd.dernier[id] = d;\n});\n\n// Ménage : 30 jours au plus\nconst limite = Date.now() - JOURS_GARDES * 24 * 3600 * 1000;\nsd.evenements = sd.evenements.filter((e) => e.t >= limite).sort((a, b) => a.t - b.t).slice(-MAX_EVENEMENTS);\nsd.maj = Date.now();\n\nreturn [{ json: { ok: true, evenements_ajoutes: ajoutes, evenements_gardes: sd.evenements.length, maj: new Date(sd.maj).toISOString() } }];\n"
+      },
+      "id": "8ebe2813-cc07-4df9-8365-fb68e10c4197",
+      "name": "Mettre à jour le journal",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -800,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "path": "journal-pannes",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "92742715-7200-4a72-961b-3b184b35a4b4",
+      "name": "Webhook journal-pannes",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1056,
+        224
+      ],
+      "webhookId": "455d6882-2777-4ec8-b1ba-469bb560c62b"
+    },
+    {
+      "parameters": {
+        "jsCode": "// v2026.11.17-7 : maillon NordVPN = moniteur « NordVPN (tunnel) » (l'ancien « NordVPN Server » reste reconnu pour l'historique)\n// v2026.11.16-2 : Journal des pannes : lecture (appelé par la page Réseau, relais Nginx /journal-pannes/)\n// Regroupe les événements en pannes : une panne commence quand un appareil tombe et finit quand tous sont revenus.\n// Pour chaque panne : l'ordre dans lequel les appareils sont tombés et revenus, et la cause probable.\nconst sd = $getWorkflowStaticData('global');\nconst evenements = (sd.evenements || []).slice().sort((a, b) => a.t - b.t);\n\n// Chaîne Internet, du bas (chez toi) vers le haut (Internet) : le maillon le plus bas tombé est la cause\nconst CHAINE = [\n  { motif: /pro\\s*max\\s*-?\\s*2\\b/i, cause: 'le switch USW Pro Max-2 (réseau local)' },\n  { motif: /pro\\s*max\\s*-?\\s*1\\b/i, cause: 'le switch USW Pro Max-1 (réseau local)' },\n  { motif: /^\\s*pf\\s*sense\\s*$/i, cause: 'le pare-feu pfSense' },\n  { motif: /modem/i, cause: 'le modem ISP (ou le câble)' },\n  { motif: /isp/i, cause: 'le fournisseur Internet (réseau ISP)' },\n  { motif: /nordvpn|server\\s*vpn/i, cause: 'NordVPN : le tunnel de pfSense est coupé (Internet fonctionne)' },\n];\nconst rang = (nom) => CHAINE.findIndex((m) => m.motif.test(nom || ''));\n\nconst pannes = [];\nconst enPanne = new Map();   // id -> nom\nlet p = null;\nevenements.forEach((e) => {\n  if (e.etat === 'down' && !enPanne.has(e.id)) {\n    if (!p) { p = { debut: e.t, fin: null, appareils: [] }; pannes.push(p); }\n    enPanne.set(e.id, e.nom);\n    p.appareils.push({ nom: e.nom, tombe: e.t, revenu: null });\n  } else if (e.etat === 'up' && enPanne.has(e.id)) {\n    enPanne.delete(e.id);\n    if (p) {\n      const a = p.appareils.slice().reverse().find((x) => x.nom === e.nom && x.revenu === null);\n      if (a) a.revenu = e.t;\n      if (!enPanne.size) { p.fin = e.t; p = null; }\n    }\n  }\n});\n\nconst iso = (t) => (t ? new Date(t).toISOString() : null);\nconst resultat = pannes.reverse().map((x) => {\n  // Cause : le maillon de la chaîne le plus bas parmi les appareils tombés ; sinon le premier appareil tombé\n  const dansChaine = x.appareils.filter((a) => rang(a.nom) >= 0).sort((a, b) => rang(a.nom) - rang(b.nom));\n  const cause = dansChaine.length\n    ? { nom: dansChaine[0].nom, texte: CHAINE[rang(dansChaine[0].nom)].cause }\n    : { nom: x.appareils[0].nom, texte: x.appareils[0].nom + ' ne répondait plus' };\n  return {\n    debut: iso(x.debut),\n    fin: iso(x.fin),\n    duree_min: Math.max(1, Math.round(((x.fin || Date.now()) - x.debut) / 60000)),\n    en_cours: !x.fin,\n    cause: cause,\n    ordre: x.appareils.map((a) => ({ nom: a.nom, tombe: iso(a.tombe), revenu: iso(a.revenu) })),\n  };\n});\n\nreturn [{\n  json: {\n    maj: iso(sd.maj),\n    depuis: iso(evenements.length ? evenements[0].t : sd.maj),\n    nb_pannes: resultat.length,\n    pannes: resultat.slice(0, 50),\n  },\n}];\n"
+      },
+      "id": "9496769f-9dd2-4e4f-893f-548136752a43",
+      "name": "Lire le journal",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -800,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "a78017c4-f30e-498e-baeb-7b311446685b",
+      "name": "Répondre",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -528,
+        224
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Toutes les 5 minutes": {
+      "main": [
+        [
+          {
+            "node": "Mettre à jour le journal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook journal-pannes": {
+      "main": [
+        [
+          {
+            "node": "Lire le journal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lire le journal": {
+      "main": [
+        [
+          {
+            "node": "Répondre",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "9736da19-dd45-463d-99be-21475517a00a",
+  "meta": {
+    "instanceId": "8130f57fae415683139811b2d51638f30d2fd4c001e5e0928ad85efb2ab9daa5"
+  },
+  "nodeGroups": [],
+  "id": "ujcr6mG9W903ig7C",
+  "tags": []
+}

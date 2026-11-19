@@ -1,0 +1,819 @@
+<!-- journal.html : v2026.11.17-4 : English version (MY HOMELAB starter kit). Morning report (n8n), recent activity, Kuma events, Synology containers -->
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Journal HomeLab</title>
+
+<link rel="stylesheet" href="./css/style.css">
+
+<link rel="stylesheet"
+href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+
+<style>
+.activity p{font-size:1rem;}
+.activity .when{opacity:.85;margin-left:8px;}
+.report-bar{display:flex;justify-content:space-between;align-items:center;gap:15px;margin-bottom:15px;font-size:1rem;}
+.report-btn{background:rgba(0,238,255,.15);color:#00eaff;border:1px solid rgba(0,238,255,.4);border-radius:10px;padding:8px 14px;font-size:1rem;cursor:pointer;}
+.report-btn:hover{box-shadow:0 0 15px rgba(0,238,255,.5);}
+.report-actions{display:flex;gap:10px;flex-wrap:wrap;}
+.report-btn.run{background:rgba(0,255,136,.15);color:#00ff88;border-color:rgba(0,255,136,.5);}
+.report-btn.run:hover{box-shadow:0 0 15px rgba(0,255,136,.6);}
+.report-btn:disabled{opacity:.6;cursor:not-allowed;box-shadow:none;}
+.run-msg{margin:-5px 0 15px;font-size:1rem;color:#ffc107;min-height:1.2em;}
+.report-frame{width:100%;min-height:200px;border:0;border-radius:15px;background:transparent;display:block;}
+.updated{text-align:center;font-size:1rem;margin:20px 0;}
+
+/* About 20 % smaller (computer only; mobile keeps its own settings) */
+@media(min-width:901px){
+main{padding:32px;}
+.hero{margin-bottom:32px;}
+.hero h1{font-size:34px;}
+.hero p{font-size:16px;margin-top:12px;}
+.panel{padding:24px;border-radius:20px;margin-bottom:28px;}
+.panel h2{font-size:1.2rem;margin-bottom:20px;}
+.activity p{font-size:.85rem;padding:10px;}
+.report-bar{font-size:.85rem;margin-bottom:12px;}
+.report-btn{font-size:.85rem;padding:6px 12px;}
+.run-msg{font-size:.85rem;}
+.updated{font-size:.85rem;}
+}
+</style>
+
+<style id="zoom-mobile">@media (max-width:900px){html{zoom:0.9}}</style>
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+</head>
+
+
+
+
+
+<body>
+
+
+<div class="background"></div>
+<div class="overlay"></div>
+
+
+
+
+
+<header>
+
+
+<div class="logo">
+
+<i class="fa-solid fa-server"></i>
+
+MY HOMELAB
+
+</div>
+
+
+
+
+
+
+<nav>
+
+
+<a href="/index.html">
+
+<i class="fa-solid fa-gauge"></i>
+
+Dashboard
+
+</a>
+
+
+
+
+
+
+
+<a href="/documentation.html">
+
+<i class="fa-solid fa-book"></i>
+
+Documentation
+
+</a>
+
+
+
+
+<a class="active" href="/journal.html">
+
+<i class="fa-solid fa-clock-rotate-left"></i>
+
+Journal
+
+</a>
+
+
+
+
+<a href="/reseau.html">
+
+<i class="fa-solid fa-network-wired"></i>
+
+Network
+
+</a>
+
+
+
+
+<a href="/supervision.html">
+
+<i class="fa-solid fa-eye"></i>
+
+Supervision
+
+</a>
+
+
+
+
+<a href="/proxmox.html">
+
+<i class="fa-solid fa-layer-group"></i>
+
+Proxmox
+
+</a>
+        <a href="/pfsense.html"><i class="fa-solid fa-shield-halved"></i> pfSense</a>
+
+
+
+</nav>
+
+
+
+
+<div class="time">
+<i class="fa-regular fa-clock"></i>
+<span id="clock">00:00:00</span>
+</div>
+
+</header>
+
+
+
+
+
+
+
+
+
+<main>
+
+
+
+
+<section class="hero">
+
+
+<h1>
+
+JOURNAL HOMELAB
+
+</h1>
+
+
+<p>
+
+Infrastructure event history
+
+</p>
+
+
+
+</section>
+
+
+
+<section class="panel">
+
+<h2>
+<i class="fa-solid fa-file-lines"></i>
+Morning report
+</h2>
+
+<div class="report-bar">
+<span id="report-info">Loading the report…</span>
+<div class="report-actions">
+<button class="report-btn run" id="report-run" type="button"><i class="fa-solid fa-play"></i> Run the Workflow</button>
+<button class="report-btn" id="report-refresh" type="button"><i class="fa-solid fa-rotate"></i> Refresh</button>
+</div>
+</div>
+
+<div class="run-msg" id="report-run-msg"></div>
+
+<div id="report-box"></div>
+
+</section>
+
+
+<section class="panel">
+
+<h2>
+<i class="fa-solid fa-bolt"></i>
+Recent activity
+</h2>
+
+<div class="activity" id="recent-activity">
+
+<p>Loading activity…</p>
+
+</div>
+
+</section>
+
+
+<section class="panel">
+
+
+<h2>
+
+<i class="fa-solid fa-server"></i>
+
+Recent service activity
+
+</h2>
+
+
+
+<div class="activity" id="kuma-events">
+
+<p>Loading events…</p>
+
+</div>
+
+
+
+</section>
+
+
+<section class="panel">
+
+
+<h2>
+
+<i class="fa-brands fa-docker"></i>
+
+Docker containers status (Synology)
+
+</h2>
+
+
+<div class="activity" id="syno-container-log">
+
+<p>Loading containers…</p>
+
+</div>
+
+
+</section>
+
+
+
+
+
+</main>
+
+
+
+
+
+
+<footer>
+
+MY HOMELAB © 2026
+
+</footer>
+
+
+
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+    const KUMA_API = "/kuma-api/api/status-page/heartbeat/homelab";
+
+    // Display name for each monitor (no technical or sensitive info shown). Use YOUR Kuma monitor ids.
+    const DEVICE_NAMES = {
+        "1": "ISP modem",
+        "2": "Google",
+        "3": "pfsense",
+        "4": "CloudKey+",
+        "5": "UNVR",
+        "6": "Synology NAS",
+        "7": "TrueNAS",
+        "8": "Nextcloud",
+        "9": "Home Assistant"
+    };
+
+    async function loadKumaEvents() {
+        const container = document.getElementById("kuma-events");
+        if (!container) return;
+
+        try {
+            const response = await fetch(KUMA_API);
+            if (!response.ok) throw new Error("HTTP error: " + response.status);
+
+            const data = await response.json();
+            const heartbeats = data.heartbeatList || {};
+
+            // Gather all heartbeats of all known devices
+            let events = [];
+            Object.keys(DEVICE_NAMES).forEach(id => {
+                const list = heartbeats[id] || [];
+                list.forEach(hb => {
+                    events.push({
+                        name: DEVICE_NAMES[id],
+                        status: hb.status,
+                        time: new Date(hb.time.replace(" ", "T") + "Z")
+                    });
+                });
+            });
+
+            // Sort newest first, keep the last 15
+            events.sort((a, b) => b.time - a.time);
+            events = events.slice(0, 15);
+
+            container.innerHTML = "";
+
+            if (events.length === 0) {
+                container.innerHTML = "<p>No event available.</p>";
+                return;
+            }
+
+            events.forEach(ev => {
+                const p = document.createElement("p");
+                const emoji = ev.status === 1 ? "🟢" : "🔴";
+                const label = ev.status === 1 ? "online" : "offline";
+                const dateStr = ev.time.toLocaleString("en-CA", {
+                    day: "2-digit", month: "2-digit", year: "numeric",
+                    hour: "2-digit", minute: "2-digit"
+                });
+
+                // Generic on purpose: no IP, no host name, no raw message
+                p.textContent = `${emoji} ${dateStr}  ${ev.name} — ${label}`;
+                container.appendChild(p);
+            });
+        } catch (error) {
+            console.error("Kuma sync failed:", error);
+            container.innerHTML = "<p>Unable to load events right now.</p>";
+        }
+    }
+
+    loadKumaEvents();
+    setInterval(loadKumaEvents, 15000);
+
+    // --- Docker containers status (Synology, through Glances) ---
+    const SYNOLOGY_IP = "192.168.100.11";   // <- your Synology
+
+    function formatUptime(createdIso) {
+        const created = new Date(createdIso);
+        const now = new Date();
+        const diffMs = now - created;
+        const diffMin = Math.floor(diffMs / 60000);
+        if (diffMin < 60) return `started ${diffMin} min ago`;
+        const diffH = Math.floor(diffMin / 60);
+        if (diffH < 24) return `started ${diffH} h ago`;
+        const diffD = Math.floor(diffH / 24);
+        return `started ${diffD} days ago`;
+    }
+
+    async function loadSynologyContainers() {
+        const container = document.getElementById("syno-container-log");
+        if (!container) return;
+
+        try {
+            const response = await fetch('/glances-syno/api/4/containers');
+            if (!response.ok) throw new Error("HTTP error: " + response.status);
+
+            const containers = await response.json();
+            container.innerHTML = "";
+
+            if (!containers || containers.length === 0) {
+                container.innerHTML = "<p>No container found.</p>";
+                return;
+            }
+
+            // Sort: failed / stopped containers first, so they are visible
+            const sorted = [...containers].sort((a, b) => {
+                const aOk = (a.status === 'running' || a.status === 'healthy') ? 1 : 0;
+                const bOk = (b.status === 'running' || b.status === 'healthy') ? 1 : 0;
+                return aOk - bOk;
+            });
+
+            sorted.forEach(c => {
+                const p = document.createElement("p");
+                const ok = c.status === 'running' || c.status === 'healthy';
+                const emoji = ok ? "🟢" : "🔴";
+                const cpuStr = typeof c.cpu_percent === 'number' ? c.cpu_percent.toFixed(1) : '0.0';
+                const uptime = c.created ? formatUptime(c.created) : (c.uptime || '');
+                p.textContent = `${emoji} ${c.name} — ${c.status} (${uptime}, CPU ${cpuStr}%)`;
+                container.appendChild(p);
+            });
+        } catch (error) {
+            console.error("Failed to read the Synology containers:", error);
+            container.innerHTML = "<p>Unable to load the containers status right now.</p>";
+        }
+    }
+
+    loadSynologyContainers();
+    setInterval(loadSynologyContainers, 10000);
+});
+</script>
+
+<script>
+(function () {
+    const $ = id => document.getElementById(id);
+    const esc = x => String(x).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const fmt = d => d.toLocaleString('en-CA', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+
+    // ---------- Report skin: same theme as the rest of the dashboard ----------
+    // The report is built by n8n with inline styles: the rules below use !important
+    // and attribute selectors to override them without touching the workflow.
+    const REPORT_THEME = `
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto:wght@400;700&display=swap');
+html,body{background:transparent !important;margin:0 !important;padding:0 !important;max-width:none !important;
+  color:#fff !important;font-family:'Roboto',sans-serif !important;font-size:17px !important;line-height:1.6 !important;}
+h1{display:none !important;}
+.date{color:#d6f6ff !important;font-size:1rem !important;margin:0 0 22px !important;}
+h2{font-family:'Orbitron',sans-serif !important;color:#00eaff !important;font-size:1.15rem !important;
+  text-shadow:0 0 12px rgba(0,234,255,.6);margin:34px 0 16px !important;}
+
+/* At a glance: status dots */
+.glance{gap:12px !important;margin-bottom:10px !important;}
+.glance > div{background:rgba(255,255,255,.08) !important;border:1px solid rgba(0,238,255,.25) !important;
+  border-radius:14px !important;padding:9px 18px !important;font-size:1rem !important;color:#fff !important;gap:10px !important;}
+.glance span{width:11px !important;height:11px !important;}
+.glance span[style*="#3fb27f"]{background:#00ff88 !important;box-shadow:0 0 14px #00ff88,0 0 4px #00ff88 !important;}
+[style*="color:#3fb27f"],[style*="color: #3fb27f"]{color:#00ff88 !important;}
+[style*="background:#3fb27f"],[style*="background: #3fb27f"]{background:#00ff88 !important;}
+[style*="background-color:#3fb27f"],[style*="background-color: #3fb27f"]{background-color:#00ff88 !important;}
+.glance span[style*="#e3a73a"]{box-shadow:0 0 10px #e3a73a;}
+.glance span[style*="#e5534b"]{box-shadow:0 0 10px #e5534b;}
+/* warn-debut */
+.glance span[style*="#e3a73a"]{background:#3b9eff !important;box-shadow:0 0 14px #3b9eff,0 0 4px #3b9eff !important;}
+[style*="color:#e3a73a"],[style*="color: #e3a73a"]{color:#3b9eff !important;}
+[style*="background:#e3a73a"],[style*="background: #e3a73a"]{background:#3b9eff !important;}
+div[style*="border-left"][style*="#e3a73a"]{border-left-color:#3b9eff !important;box-shadow:0 0 22px rgba(59,158,255,.3) !important;}
+/* warn-fin */
+
+/* "To watch" cards */
+div[style*="border-left"]{background:rgba(255,255,255,.08) !important;border-left-width:5px !important;
+  border-radius:6px 20px 20px 6px !important;padding:18px 22px !important;margin-bottom:16px !important;}
+div[style*="border-left"][style*="#e5534b"]{box-shadow:0 0 22px rgba(229,83,75,.28);}
+div[style*="border-left"][style*="#e3a73a"]{box-shadow:0 0 22px rgba(227,167,58,.22);}
+div[style*="border-left"] strong{font-family:'Orbitron',sans-serif;font-size:1.05rem;color:#fff;}
+div[style*="border-left"] > span{font-family:'Orbitron',sans-serif;font-size:.85rem !important;font-weight:700;
+  text-transform:uppercase;letter-spacing:1px;}
+div[style*="color:#ccc"]{color:#f2f2f2 !important;font-size:1rem !important;}
+div[style*="color:#4fc3f7"]{color:#00eaff !important;font-size:1rem !important;}
+
+/* Technical log */
+details{margin-top:30px;}
+summary{display:inline-block;cursor:pointer;color:#00eaff !important;font-size:1rem !important;
+  background:rgba(255,255,255,.08);border:1px solid rgba(0,238,255,.25);border-radius:12px;padding:10px 18px;margin:0 0 14px !important;}
+summary:hover{box-shadow:0 0 15px rgba(0,238,255,.5);}
+div[style*="monospace"]{font-size:.95rem !important;color:#f2f2f2 !important;padding:10px 6px !important;
+  border-bottom:1px solid rgba(255,255,255,.1);}
+div[style*="monospace"] span{font-weight:700;}
+/* Highlighted commands */
+code.cmd{display:inline;font-family:Consolas,'DejaVu Sans Mono',monospace !important;font-size:.95em;font-weight:700;color:#ffe066;
+  background:rgba(255,224,102,.12);border:1px solid rgba(255,224,102,.55);border-radius:6px;padding:2px 8px;
+  white-space:pre-wrap;word-break:break-all;user-select:all;-webkit-box-decoration-break:clone;box-decoration-break:clone;}
+
+/* Report about 20 % smaller (computer only) */
+@media(min-width:901px){
+html,body{font-size:14px !important;line-height:1.5 !important;}
+.date{margin:0 0 18px !important;}
+h2{margin:27px 0 13px !important;}
+.glance{gap:10px !important;margin-bottom:8px !important;}
+.glance > div{padding:7px 14px !important;border-radius:11px !important;gap:8px !important;}
+.glance span{width:9px !important;height:9px !important;}
+div[style*="border-left"]{border-left-width:4px !important;border-radius:5px 16px 16px 5px !important;padding:14px 18px !important;margin-bottom:13px !important;}
+details{margin-top:24px;}
+summary{border-radius:10px;padding:8px 14px;margin:0 0 11px !important;}
+div[style*="monospace"]{padding:8px 5px !important;}
+}
+
+/* Dots summary (added by the page on phone): hidden on computer */
+#voir-ok, .glance-resume{display:none;}
+
+/* Phone: keep mostly what needs an action */
+@media(max-width:900px){
+html,body{font-size:15px !important;line-height:1.5 !important;}
+.date{margin:0 0 12px !important;}
+.stats{gap:2px 14px !important;padding:8px 10px !important;font-size:.9rem !important;margin:0 0 14px !important;}
+/* Dots: only WARN or CRIT systems stay visible; OK ones show with the summary button */
+.glance-resume{display:inline-block;cursor:pointer;color:#00eaff;background:rgba(255,255,255,.08);
+  border:1px solid rgba(0,238,255,.3);border-radius:12px;padding:8px 14px;margin:0 0 10px;font-size:.95rem;}
+.glance-resume b{color:#00ff88;}
+.glance > div:has(> span[style*="#3fb27f"]){display:none !important;}
+#voir-ok:checked ~ .glance > div:has(> span[style*="#3fb27f"]){display:flex !important;}
+.glance > div{padding:7px 12px !important;font-size:.95rem !important;}
+/* History: shorter names to keep the boxes visible */
+.histo{padding:8px 10px !important;margin:14px 0 18px 0 !important;}
+.hnom{width:140px !important;font-size:.9rem;}
+.hcase{width:9px !important;height:14px !important;}
+/* "To watch" cards: fewer nested margins, more room for text */
+div[style*="border-left"]{padding:12px 10px !important;border-radius:5px 14px 14px 5px !important;}
+.card{padding:12px 10px !important;}
+.block{padding:10px 10px !important;margin-top:12px !important;}
+.card-head{flex-wrap:wrap;gap:8px !important;}
+ul{margin-left:16px !important;}
+h2{margin:22px 0 12px !important;}
+}
+`;
+
+    // Highlights commands (between backticks) and puts steps 1) 2) 3) on separate lines
+    function surlignerCommandes(html) {
+        try {
+            const doc = new DOMParser().parseFromString(html, 'text/html');
+            const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+            const noeuds = [];
+            while (walker.nextNode()) noeuds.push(walker.currentNode);
+            noeuds.forEach(function (n) {
+                const parent = n.parentElement;
+                if (!parent || /^(SCRIPT|STYLE|CODE)$/.test(parent.tagName)) return;
+                const t = n.nodeValue;
+                const aCommandes = /`[^`\n]+`/.test(t);
+                const aEtapes = /(^|\s)1\)\s/.test(t) && /\s2\)\s/.test(t);
+                if (!aCommandes && !aEtapes) return;
+                let out = '';
+                t.split(/(`[^`\n]+`)/).forEach(function (part) {
+                    if (/^`[^`\n]+`$/.test(part)) {
+                        out += '<code class="cmd">' + esc(part.slice(1, -1)) + '</code>';
+                    } else {
+                        let h = esc(part);
+                        if (aEtapes) h = h.replace(/(^|\s)(\d{1,2}\))\s/g, function (m, a, b) { return '<br>' + b + ' '; });
+                        out += h;
+                    }
+                });
+                out = out.replace(/^(<br>)+/, '');
+                const span = doc.createElement('span');
+                span.innerHTML = out;
+                n.replaceWith(span);
+            });
+            return '<!DOCTYPE html>' + doc.documentElement.outerHTML;
+        } catch (e) {
+            return html;
+        }
+    }
+
+    // Phone: folds the history and adds, before the dots, an "N OK" summary that shows or hides
+    // the OK systems. No script in the report: a hidden checkbox and its label are enough (CSS).
+    function preparerTelephone(d) {
+        try {
+            const h = d.querySelector('details.histo');
+            if (h) h.removeAttribute('open');
+            const g = d.querySelector('.glance');
+            if (!g || d.getElementById('voir-ok')) return;
+            const styles = Array.from(g.children).map(x => { const sp = x.querySelector('span'); return sp ? (sp.getAttribute('style') || '') : ''; });
+            const ok = styles.filter(st => st.includes('#3fb27f')).length;
+            const warn = styles.filter(st => st.includes('#e3a73a')).length;
+            const crit = styles.filter(st => st.includes('#e5534b')).length;
+            const cb = d.createElement('input');
+            cb.type = 'checkbox'; cb.id = 'voir-ok';
+            const lb = d.createElement('label');
+            lb.htmlFor = 'voir-ok'; lb.className = 'glance-resume';
+            lb.innerHTML = '<b>' + ok + ' OK</b>' + (warn ? ' · ' + warn + ' WARN' : '') + (crit ? ' · ' + crit + ' CRIT' : '') +
+                ' : tap to show or hide the OK systems';
+            g.parentNode.insertBefore(cb, g);
+            g.parentNode.insertBefore(lb, g);
+        } catch (e) { /* the report still shows, without the summary */ }
+    }
+
+    function withTheme(html) {
+        const tag = '<style id="site-theme">' + REPORT_THEME + '</style>';
+        return /<\/head>/i.test(html) ? html.replace(/<\/head>/i, tag + '</head>') : tag + html;
+    }
+
+    // ---------- Morning report (n8n, relayed by Nginx) ----------
+    const REPORT_URL = '/rapport-matin/';
+    let lastReportHtml = '';
+
+    async function loadReport() {
+        const box = $('report-box'), info = $('report-info');
+        try {
+            const r = await fetch(REPORT_URL, { cache: 'no-store' });
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            const html = await r.text();
+            if (!html.trim()) throw new Error('rapport vide');
+            let frame = $('report-frame');
+            if (!frame) {
+                frame = document.createElement('iframe');
+                frame.id = 'report-frame';
+                frame.className = 'report-frame';
+                frame.setAttribute('sandbox', 'allow-same-origin'); // no scripts: the content comes from an AI agent
+                frame.addEventListener('load', function () {
+                    if (window.innerWidth <= 900) preparerTelephone(frame.contentDocument);
+                    function fit() {
+                        try {
+                            const d = frame.contentDocument;
+                            frame.style.height = Math.max(d.documentElement.scrollHeight, d.body.scrollHeight) + 'px';
+                        } catch (e) { frame.style.height = '900px'; }
+                    }
+                    fit();
+                    try { new frame.contentWindow.ResizeObserver(fit).observe(frame.contentDocument.body); } catch (e) { /* old browser */ }
+                });
+                box.innerHTML = '';
+                box.appendChild(frame);
+            }
+            frame.srcdoc = withTheme(surlignerCommandes(html));
+            lastReportHtml = html;
+            info.textContent = 'Last read: ' + new Date().toLocaleTimeString('en-CA');
+        } catch (e) {
+            console.error('Morning report:', e);
+            if (!$('report-frame')) box.innerHTML = '<p>Report unavailable right now (n8n relay unreachable or report not generated yet).</p>';
+            info.textContent = 'Loading error';
+        }
+    }
+
+
+    // ---------- Run the scan on demand (n8n webhook, relayed by Nginx) ----------
+    const RUN_URL = '/lancer-scan';
+    const RUN_POLL_MS = 15000;      // check every 15 s if a new report has arrived
+    const RUN_TIMEOUT_MS = 15 * 60 * 1000;
+    let runTimer = null;
+
+    function runMsg(txt, color) {
+        const m = $('report-run-msg');
+        m.textContent = txt;
+        m.style.color = color || '#ffc107';
+    }
+
+    function runDone(btn, txt, color) {
+        clearInterval(runTimer);
+        runTimer = null;
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-play"></i> Run the Workflow';
+        runMsg(txt, color);
+    }
+
+    // Confirmation inside the page, with two taps: the browser confirm() window does not show
+    // in the Android Dashboard app (WebView), which then answers "Cancel" by itself.
+    const RUN_CONFIRM_MS = 5000;
+    let runConfirmTimer = null;
+
+    async function runWorkflow() {
+        const btn = $('report-run');
+        if (btn.disabled) return;
+        if (!runConfirmTimer) {
+            btn.innerHTML = '<i class="fa-solid fa-circle-question"></i> Tap again to confirm';
+            runMsg('Run the scan now? It can take a few minutes. Tap the button a 2nd time to confirm.');
+            runConfirmTimer = setTimeout(function () {
+                runConfirmTimer = null;
+                if (!btn.disabled) {
+                    btn.innerHTML = '<i class="fa-solid fa-play"></i> Run the Workflow';
+                    runMsg('');
+                }
+            }, RUN_CONFIRM_MS);
+            return;
+        }
+        clearTimeout(runConfirmTimer);
+        runConfirmTimer = null;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Scan running…';
+        runMsg('Starting the scan…');
+        try {
+            const r = await fetch(RUN_URL, { method: 'POST', cache: 'no-store' });
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+        } catch (e) {
+            console.error('Scan start:', e);
+            runDone(btn, 'Unable to start the scan (' + e.message + '). Check the n8n webhook and the Nginx relay /lancer-scan.', '#ff4a4a');
+            return;
+        }
+        const started = Date.now();
+        const before = lastReportHtml;
+        runMsg('Scan started at ' + new Date().toLocaleTimeString('en-CA') + ' — the report will show as soon as it is ready.');
+        runTimer = setInterval(async function () {
+            const secs = Math.round((Date.now() - started) / 1000);
+            try {
+                const r = await fetch(REPORT_URL, { cache: 'no-store' });
+                if (r.ok) {
+                    const html = await r.text();
+                    if (html.trim() && html !== before) {
+                        await loadReport();
+                        runDone(btn, 'Scan finished: new report shown.', '#00ff88');
+                        return;
+                    }
+                }
+            } catch (e) { /* try again on the next round */ }
+            if (Date.now() - started > RUN_TIMEOUT_MS) {
+                runDone(btn, 'The report did not change after 15 minutes. Check the execution in n8n.', '#ff4a4a');
+            } else {
+                runMsg('Scan running… ' + Math.floor(secs / 60) + ' min ' + String(secs % 60).padStart(2, '0') + ' s');
+            }
+        }, RUN_POLL_MS);
+    }
+
+    // ---------- Recent activity (Kuma + Proxmox) ----------
+    const KUMA = '/kuma-api/api/status-page/';
+    const NODES = ['proxmox1', 'proxmox2'];
+    const SKIP_TASKS = ['vncproxy', 'vncshell', 'spiceproxy']; // consoles opened by hand: too much noise
+    const TASK_LABELS = {
+        qmstart: 'VM start', qmstop: 'VM stop', qmshutdown: 'VM shutdown',
+        qmreboot: 'VM reboot', qmsnapshot: 'VM snapshot', qmrollback: 'VM rollback',
+        qmclone: 'VM clone', qmigrate: 'VM migration', qmcreate: 'VM creation',
+        vzstart: 'CT start', vzstop: 'CT stop', vzshutdown: 'CT shutdown',
+        vzreboot: 'CT reboot', vzdump: 'Backup', aptupdate: 'Package update',
+        srvreload: 'Service reload', imgcopy: 'Disk copy', download: 'Download',
+        zfscreate: 'ZFS creation'
+    };
+
+    async function kumaEvents() {
+        const [names, hb] = await Promise.all([
+            fetch(KUMA + 'homelab', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null),
+            fetch(KUMA + 'heartbeat/homelab', { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        ]);
+        const label = {};
+        ((names && names.publicGroupList) || []).forEach(g => (g.monitorList || []).forEach(m => { label[m.id] = m.name; }));
+        const out = [];
+        const lists = hb.heartbeatList || {};
+        Object.keys(lists).forEach(id => {
+            const list = lists[id] || [];
+            for (let i = 1; i < list.length; i++) {
+                const a = list[i - 1].status, b = list[i].status;
+                if (a === b || (b !== 0 && b !== 1)) continue; // keep only up/down changes
+                out.push({
+                    t: new Date(list[i].time.replace(' ', 'T') + 'Z'),
+                    icon: b === 1 ? 'fa-circle-check' : 'fa-circle-xmark',
+                    color: b === 1 ? '' : '#ff4d4d',
+                    text: (label[id] || ('Monitor ' + id)) + (b === 1 ? ': back online' : ': offline')
+                });
+            }
+        });
+        return out;
+    }
+
+    async function proxmoxEvents() {
+        const out = [];
+        await Promise.all(NODES.map(async key => {
+            try {
+                const res = (await (await fetch('/pve/' + key + '/cluster/resources', { cache: 'no-store' })).json()).data;
+                const node = res.find(r => r.type === 'node');
+                if (!node) return;
+                const tasks = (await (await fetch('/pve/' + key + '/nodes/' + node.node + '/tasks?limit=30', { cache: 'no-store' })).json()).data;
+                tasks.forEach(t => {
+                    if (SKIP_TASKS.indexOf(t.type) !== -1) return;
+                    const running = t.status === undefined;
+                    const ok = t.status === 'OK' || /^WARNINGS/.test(t.status || '');
+                    const name = (TASK_LABELS[t.type] || t.type) + (t.id ? ' ' + t.id : '');
+                    out.push({
+                        t: new Date(t.starttime * 1000),
+                        icon: running ? 'fa-spinner' : ok ? (t.type === 'vzdump' ? 'fa-floppy-disk' : 'fa-check') : 'fa-triangle-exclamation',
+                        color: (running || ok) ? '' : '#ff4d4d',
+                        text: name + ' (' + node.node + ')' + (running ? ': running' : ok ? '' : ': failed')
+                    });
+                });
+            } catch (e) { console.warn('Proxmox tasks ' + key + ' unavailable', e); }
+        }));
+        return out;
+    }
+
+    async function loadActivity() {
+        const box = $('recent-activity');
+        const [k, p] = await Promise.all([
+            kumaEvents().catch(e => { console.error('Kuma:', e); return null; }),
+            proxmoxEvents().catch(e => { console.error('Proxmox:', e); return null; })
+        ]);
+        if (k === null && p === null) {
+            box.innerHTML = '<p>Unable to load activity right now.</p>';
+            return;
+        }
+        const events = (k || []).concat(p || []).sort((a, b) => b.t - a.t).slice(0, 15);
+        if (!events.length) { box.innerHTML = '<p>No recent activity.</p>'; return; }
+        box.innerHTML = events.map(e =>
+            '<p><i class="fa-solid ' + e.icon + '"' + (e.color ? ' style="color:' + e.color + '"' : '') + '></i>' +
+            esc(e.text) + '<span class="when"> — ' + esc(fmt(e.t)) + '</span></p>'
+        ).join('');
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        $('report-refresh').addEventListener('click', loadReport);
+        $('report-run').addEventListener('click', runWorkflow);
+        loadReport();
+        setInterval(loadReport, 300000);
+        loadActivity();
+        setInterval(loadActivity, 30000);
+    });
+})();
+</script>
+
+<script src="./js/clock.js"></script>
+</body>
+
+</html>

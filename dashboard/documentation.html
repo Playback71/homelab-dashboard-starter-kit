@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<!-- documentation.html : v2026.11.17-1 : English version (MY HOMELAB starter kit). Documentation page: documents list and version log (VERSIONS.txt) -->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Documentation HomeLab</title>
+<link rel="stylesheet" href="./css/style.css">
+<link rel="stylesheet"
+href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+<style>
+/* Document list links: underlined white (the default blue is hard to read on black) */
+.activity a{color:#ffffff;font-size:1.4rem;font-weight:bold;text-decoration:underline;text-underline-offset:4px;}
+.activity a:visited{color:#ffffff;}
+.activity a:hover,.activity a:focus{color:#ffe14d;}
+
+/* About 20 % smaller (computer only; mobile keeps its own settings) */
+@media(min-width:901px){
+main{padding:32px;}
+.hero{margin-bottom:32px;}
+.hero h1{font-size:34px;}
+.hero p{font-size:16px;margin-top:12px;}
+.panel{padding:24px;border-radius:20px;margin-bottom:28px;}
+.panel h2{font-size:1.2rem;margin-bottom:20px;}
+.activity p{padding:10px;}
+.activity a{font-size:1.15rem;} /* +25 % (was .9rem) */
+/* Document list on 2 columns: the page fits on screen without being shrunk by fit-page.js */
+#docs-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));column-gap:24px;}
+#docs-list p{margin:0;}
+}
+
+/* Phone: smaller document list */
+@media(max-width:900px){
+.activity a{font-size:1rem;text-underline-offset:3px;}
+.activity p{padding:8px 4px;}
+}
+
+/* Version log (VERSIONS.txt) */
+.vfiltres{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:16px;}
+.vchip{background:rgba(255,255,255,.08);border:1px solid rgba(0,238,255,.3);border-radius:14px;color:#fff;
+  font-size:1rem;padding:7px 14px;cursor:pointer;font-family:inherit;}
+.vchip:hover{box-shadow:0 0 12px rgba(0,238,255,.5);}
+.vchip.actif{background:rgba(0,234,255,.22);border-color:#00eaff;color:#00eaff;font-weight:bold;}
+.vchip b{color:#ffe066;margin-left:4px;}
+#vrecherche{background:rgba(0,0,0,.35);border:1px solid rgba(0,238,255,.3);border-radius:14px;color:#fff;
+  font-size:1rem;padding:7px 14px;min-width:240px;font-family:inherit;}
+#vrecherche::placeholder{color:#cfe9f0;}
+/* The list scrolls in its own box: the page keeps its size (fit-page.js does not shrink everything) */
+#versions-list{max-height:58vh;overflow-y:auto;padding-right:8px;}
+.ventree{background:rgba(255,255,255,.06);border-left:4px solid #00eaff;border-radius:6px 16px 16px 6px;
+  padding:12px 16px;margin-bottom:12px;}
+.ventree h3{margin:0 0 6px 0;font-size:1.05rem;color:#00eaff;display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;}
+.ventree h3 .vdate{color:#fff;}
+.vtag{font-size:.85rem;background:rgba(0,234,255,.15);border:1px solid rgba(0,238,255,.4);border-radius:10px;
+  padding:1px 9px;color:#d6f6ff;font-weight:normal;}
+.ventree pre{margin:0;white-space:pre-wrap;word-break:break-word;font-family:Consolas,'DejaVu Sans Mono',monospace;
+  font-size:.95rem;line-height:1.5;color:#f2f2f2;}
+.ventree mark{background:#ffe066;color:#000;border-radius:3px;padding:0 2px;}
+#versions-info{color:#d6f6ff;margin:0 0 10px 0;}
+</style>
+<style id="zoom-mobile">@media (max-width:900px){html{zoom:0.9}}</style>
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+</head>
+
+<body>
+<div class="background"></div>
+<div class="overlay"></div>
+<header>
+<div class="logo">
+<i class="fa-solid fa-server"></i>
+MY HOMELAB
+</div>
+<nav>
+<a href="/index.html">
+<i class="fa-solid fa-gauge"></i>
+Dashboard
+</a>
+<a class="active" href="/documentation.html">
+<i class="fa-solid fa-book"></i>
+Documentation
+</a>
+<a href="/journal.html">
+<i class="fa-solid fa-clock-rotate-left"></i>
+Journal
+</a>
+<a href="/reseau.html">
+<i class="fa-solid fa-network-wired"></i>
+Network
+</a>
+<a href="/supervision.html">
+<i class="fa-solid fa-eye"></i>
+Supervision
+</a>
+<a href="/proxmox.html">
+<i class="fa-solid fa-layer-group"></i>
+Proxmox
+</a>
+        <a href="/pfsense.html"><i class="fa-solid fa-shield-halved"></i> pfSense</a>
+</nav>
+<div class="time">
+<i class="fa-regular fa-clock"></i>
+<span id="clock">00:00:00</span>
+</div>
+
+</header>
+<main>
+<section class="hero">
+<h1>
+DOCUMENTATION HOMELAB
+</h1>
+<p>
+Technical wiki of the infrastructure
+</p>
+</section>
+<section class="panel">
+<h2>
+<i class="fa-solid fa-file-lines"></i>
+Technical documents
+</h2>
+<div class="activity" id="docs-list">
+<p>
+Loading documents...
+</p>
+</div>
+</section>
+<section class="panel">
+<h2>
+<i class="fa-solid fa-code-branch"></i>
+Version log
+</h2>
+<div class="vfiltres" id="versions-filtres"></div>
+<p id="versions-info">Loading VERSIONS.txt...</p>
+<div id="versions-list"></div>
+</section>
+</main>
+<footer>
+MY HOMELAB © 2026
+</footer>
+
+<script>
+const DOCS_URL = '/documents/';
+
+function iconForFile(name) {
+    const ext = name.split('.').pop().toLowerCase();
+    const icons = {
+        pdf: '📄',
+        xlsx: '📊',
+        xls: '📊',
+        csv: '📊',
+        doc: '📝',
+        docx: '📝',
+        txt: '📃',
+        zip: '🗜️',
+        png: '🖼️',
+        jpg: '🖼️',
+        jpeg: '🖼️'
+    };
+    return icons[ext] || '📁';
+}
+
+async function loadDocuments() {
+    try {
+        const res = await fetch(DOCS_URL, { headers: { 'Accept': 'application/json' } });
+        if (!res.ok) throw new Error('Loading error');
+        const files = await res.json();
+
+        const list = files
+            .filter(f => f.type === 'file')
+            .sort((a, b) => a.name.localeCompare(b.name));
+
+        const container = document.getElementById('docs-list');
+
+        if (list.length === 0) {
+            container.innerHTML = '<p>No document found.</p>';
+            return;
+        }
+
+        container.innerHTML = list.map(f => `
+            <p>
+                <a href="${DOCS_URL}${encodeURIComponent(f.name)}" target="_blank">
+                    ${iconForFile(f.name)} ${f.name}
+                </a>
+            </p>
+        `).join('');
+    } catch (err) {
+        document.getElementById('docs-list').innerHTML = '<p>Unable to load the document list.</p>';
+        console.error(err);
+    }
+}
+
+loadDocuments();
+setInterval(loadDocuments, 15000); // refresh every 15 seconds
+
+// ---------- Version log: /documents/VERSIONS.txt ----------
+// An entry starts with a line "YYYY-MM-DD  vYYYY.MM.DD-N" followed by a line of dashes.
+// The systems involved are recognized by words in the text of the entry.
+const VERSIONS_URL = '/documents/VERSIONS.txt';
+const SYSTEMES = [
+    ['n8n', /n8n/i],
+    ['Site', /^Site\b|\.html|sante\.js|site-web/im],
+    ['TrueNAS', /truenas/i],
+    ['Synology', /synology/i],
+    ['pfSense', /pfsense/i],
+    ['Proxmox', /proxmox/i],
+    ['UniFi', /unifi/i],
+    ['Home Assistant', /home assistant/i],
+    ['Uptime Kuma', /kuma/i],
+    ['Grafana / Loki', /grafana|loki/i]
+];
+let vEntrees = [], vFiltre = 'All', vTexteBrut = '';
+const vEsc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+function vAnalyser(txt) {
+    const lignes = txt.replace(/\r/g, '').split('\n');
+    const entrees = [];
+    let cur = null;
+    for (let i = 0; i < lignes.length; i++) {
+        const m = lignes[i].match(/^(\d{4}-\d{2}-\d{2})\s+(v[\d.]+-\d+)\s*$/);
+        if (m && /^-{5,}\s*$/.test(lignes[i + 1] || '')) {
+            if (cur) entrees.push(cur);
+            cur = { date: m[1], version: m[2], corps: [] };
+            i++;   // skip the line of dashes
+            continue;
+        }
+        if (cur) cur.corps.push(lignes[i]);
+    }
+    if (cur) entrees.push(cur);
+    entrees.forEach(e => {
+        e.texte = e.corps.join('\n').replace(/\s+$/, '');
+        e.systemes = SYSTEMES.filter(([, re]) => re.test(e.texte)).map(([nom]) => nom);
+    });
+    return entrees;
+}
+
+function vJour(d) {
+    const t = new Date(d + 'T12:00:00');
+    return isNaN(t) ? d : t.toLocaleDateString('en-CA', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function vAfficher() {
+    const q = (document.getElementById('vrecherche') || {}).value || '';
+    const qn = q.trim().toLowerCase();
+    const liste = vEntrees.filter(e =>
+        (vFiltre === 'All' || e.systemes.includes(vFiltre)) &&
+        (!qn || (e.version + ' ' + e.date + ' ' + e.texte).toLowerCase().includes(qn)));
+    const surligner = s => {
+        let h = vEsc(s);
+        if (qn) {
+            const re = new RegExp(qn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'), 'gi');
+            h = h.replace(re, x => '<mark>' + x + '</mark>');
+        }
+        return h;
+    };
+    document.getElementById('versions-info').textContent =
+        liste.length + ' change(s) out of ' + vEntrees.length +
+        (vFiltre !== 'All' ? ' : ' + vFiltre : '') + (qn ? ' : "' + q.trim() + '"' : '');
+    document.getElementById('versions-list').innerHTML = liste.map(e => `
+        <div class="ventree">
+            <h3><span class="vdate">${vEsc(vJour(e.date))}</span> ${surligner(e.version)}
+                ${e.systemes.map(s => '<span class="vtag">' + vEsc(s) + '</span>').join('')}</h3>
+            <pre>${surligner(e.texte)}</pre>
+        </div>`).join('') || '<p>No change matches.</p>';
+}
+
+function vFiltres() {
+    const box = document.getElementById('versions-filtres');
+    const compte = nom => nom === 'All' ? vEntrees.length : vEntrees.filter(e => e.systemes.includes(nom)).length;
+    const noms = ['All'].concat(SYSTEMES.map(([n]) => n).filter(n => compte(n) > 0));
+    if (!noms.includes(vFiltre)) vFiltre = 'All';
+    const ancienne = (document.getElementById('vrecherche') || {}).value || '';
+    box.innerHTML = noms.map(n =>
+        `<button class="vchip${n === vFiltre ? ' actif' : ''}" data-sys="${vEsc(n)}">${vEsc(n)}<b>${compte(n)}</b></button>`).join('') +
+        `<input id="vrecherche" type="search" placeholder="Search (node, file, version...)" value="${vEsc(ancienne)}">`;
+    box.querySelectorAll('.vchip').forEach(b => b.addEventListener('click', () => {
+        vFiltre = b.dataset.sys;
+        box.querySelectorAll('.vchip').forEach(x => x.classList.toggle('actif', x === b));
+        vAfficher();
+    }));
+    document.getElementById('vrecherche').addEventListener('input', vAfficher);
+}
+
+async function loadVersions() {
+    try {
+        const r = await fetch(VERSIONS_URL, { cache: 'no-store' });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const txt = await r.text();
+        if (txt === vTexteBrut) return;   // nothing new: keep the filter, the search and the position
+        vTexteBrut = txt;
+        vEntrees = vAnalyser(txt);
+        vFiltres();
+        vAfficher();
+    } catch (e) {
+        document.getElementById('versions-info').textContent = 'Unable to read VERSIONS.txt (' + e.message + ').';
+        console.error(e);
+    }
+}
+loadVersions();
+setInterval(loadVersions, 60000);   // check every minute if VERSIONS.txt has changed
+</script>
+<script src="./js/clock.js"></script>
+<script src="./js/fit-page.js"></script>
+</body>
+</html>

@@ -1,0 +1,68 @@
+{
+  "name": "Alertes temps réel",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes"
+            }
+          ]
+        }
+      },
+      "id": "0906105b-8003-4d64-9f1c-bef7d76e49cc",
+      "name": "Toutes les 5 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -128,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Vérifier et alerter (Alertes temps réel) : v2026.11.07-1 : Snort et appareils UniFi, réessai si envoi HA échoue, UPS retiré\n// Vérifier et alerter : workflow « Alertes temps réel » (toutes les 5 minutes)\n// Envoie une notification sur le téléphone (application Home Assistant) quand un problème critique APPARAÎT,\n// puis une autre quand il est RÉSOLU. Rien n'est envoyé tant que l'état ne change pas.\n// Un problème doit être vu 2 fois de suite (10 min) avant l'alerte, pour éviter les fausses alertes.\n// L'UPS n'est pas surveillé ici : l'application UniFi envoie déjà ses propres notifications.\n// (ex. Snort qui redémarre quelques secondes après la mise à jour de ses règles).\n// IMPORTANT : la mémoire de l'état ne fonctionne que lorsque le workflow est ACTIF (pas avec « Execute workflow »).\n\n// ---------- Réglages (coller les clés ici, jamais dans le chat) ----------\nconst HA_URL      = 'http://IP_PRIVEE_1:PORT_1';\nconst HA_TOKEN    = 'A_REMPLIR';              // jeton longue durée (le même que pour Uptime Kuma, ou un nouveau)\nconst HA_SERVICE  = 'mobile_app_sm_g998w';      // ex. mobile_app_sm_s928w (sans « notify. »)\n\nconst PFS_URL     = 'https://IP_PRIVEE_2:PORT_2';\nconst PFS_KEY     = 'A_REMPLIR';           // même clé que check_pfsense_services\n\nconst UNIFI_URL   = 'https://IP_PRIVEE_3';\nconst UNIFI_KEY   = 'A_REMPLIR';             // même clé que check_unifi\n\nconst CONFIRMATIONS = 2;   // nombre de vérifications de suite avant d'alerter (2 x 5 min = 10 min)\n// ------------------------------------------------------------------------\n\nconst problemes = {};      // clé -> texte du problème\nconst infos = {};          // retour du nœud (pour vérifier)\n\n// 1) Snort : arrêté sur une interface de pfSense\ntry {\n  const r = await this.helpers.httpRequest({\n    method: 'GET', url: PFS_URL + '/api/v2/status/services',\n    headers: { 'X-API-Key': PFS_KEY, Accept: 'application/json' },\n    skipSslCertificateValidation: true, json: true,\n  });\n  const marche = s => s.status === true || /^(running|started|active|up)$/i.test(String(s.status));\n  const snort = (r.data || []).filter(s => /snort/i.test(String(s.name || '') + ' ' + String(s.description || '')));\n  snort.filter(s => s.enabled !== false && !marche(s)).forEach(s => {\n    problemes['snort:' + (s.description || s.name)] = 'Snort arrêté sur ' + (s.description || s.name);\n  });\n  infos.snort = snort.length + ' service(s), ' + snort.filter(marche).length + ' en marche';\n} catch (e) {\n  problemes['pfsense-api'] = \"L'API pfSense ne répond pas (\" + String(e.message).slice(0, 80) + ')';\n}\n\n// 2) Appareils UniFi hors ligne (switchs, points d'accès, UPS...)\ntry {\n  const h = { 'X-API-Key': UNIFI_KEY, Accept: 'application/json' };\n  const sites = await this.helpers.httpRequest({ method: 'GET', url: UNIFI_URL + '/proxy/network/integration/v1/sites', headers: h, skipSslCertificateValidation: true, json: true });\n  const site = (sites.data || [])[0];\n  const devs = await this.helpers.httpRequest({ method: 'GET', url: UNIFI_URL + '/proxy/network/integration/v1/sites/' + site.id + '/devices?limit=200', headers: h, skipSslCertificateValidation: true, json: true });\n  const liste = devs.data || [];\n  const passage = ['UPDATING', 'GETTING_READY', 'ADOPTING', 'PENDING_ADOPTION'];\n  liste.filter(d => String(d.state).toUpperCase() !== 'ONLINE' && !passage.includes(String(d.state).toUpperCase())).forEach(d => {\n    problemes['unifi:' + d.id] = 'UniFi : ' + d.name + ' hors ligne (' + d.state + ')';\n  });\n  infos.unifi = liste.length + ' appareil(s), ' + liste.filter(d => String(d.state).toUpperCase() === 'ONLINE').length + ' en ligne';\n\n} catch (e) {\n  problemes['unifi-api'] = \"L'API UniFi ne répond pas (\" + String(e.message).slice(0, 80) + ')';\n}\n\nconst immediat = {};   // problèmes signalés dès la 1re vérification (aucun pour l'instant)\n\n// 3) Comparaison avec l'état précédent (mémoire du workflow)\nconst memoire = $getWorkflowStaticData('global');\nconst compte = memoire.compte || {};      // nombre de vérifications de suite où le problème est vu\nconst alertes = memoire.alertes || {};    // problèmes déjà signalés\nconst aEnvoyer = [];\n\nfor (const [cle, texte] of Object.entries(problemes)) {\n  compte[cle] = (compte[cle] || 0) + 1;\n  if ((compte[cle] >= CONFIRMATIONS || immediat[cle]) && !alertes[cle]) {\n    aEnvoyer.push({ cle, type: 'probleme', titre: '🔴 Homelab : problème', message: texte });\n  }\n}\nfor (const cle of Object.keys(compte)) {\n  if (!problemes[cle]) {\n    if (alertes[cle]) aEnvoyer.push({ cle, type: 'resolu', titre: '🟢 Homelab : résolu', message: alertes[cle] });\n    delete compte[cle];\n  }\n}\nmemoire.compte = compte;\nmemoire.alertes = alertes;\n\n// 4) Envoi des notifications par Home Assistant\n// Un problème n'est noté « déjà signalé » que si l'envoi a réussi : sinon on réessaie à la prochaine vérification.\nconst envoyes = [];\nfor (const n of aEnvoyer) {\n  let ok = false, detail = '';\n  try {\n    const rep = await this.helpers.httpRequest({\n      method: 'POST', url: HA_URL + '/api/services/notify/' + HA_SERVICE,\n      headers: { Authorization: 'Bearer ' + HA_TOKEN, 'Content-Type': 'application/json' },\n      body: { title: n.titre, message: n.message, data: { priority: 'high', ttl: 0 } },\n      json: true, returnFullResponse: true, ignoreHttpStatusErrors: true,\n    });\n    ok = rep.statusCode >= 200 && rep.statusCode < 300;\n    if (!ok) detail = 'HTTP ' + rep.statusCode + ' : ' + JSON.stringify(rep.body).slice(0, 150);\n  } catch (e) {\n    detail = String(e.message).slice(0, 150);\n  }\n  if (ok) {\n    if (n.type === 'probleme') alertes[n.cle] = n.message;\n    else delete alertes[n.cle];\n    envoyes.push(n.titre + ' : ' + n.message);\n  } else {\n    if (n.type === 'resolu') delete alertes[n.cle];   // pas de nouvel essai pour un « résolu »\n    envoyes.push('ÉCHEC ENVOI (' + detail + ') : ' + n.message);\n  }\n}\nmemoire.alertes = alertes;\n\nreturn [{ json: { verifie_a: new Date().toLocaleString('fr-CA', { timeZone: 'America/Toronto' }), problemes_vus: problemes, deja_signales: alertes, notifications_envoyees: envoyes, infos } }];"
+      },
+      "id": "52d0529f-c13e-4f4e-b3ba-ab6d38a1d137",
+      "name": "Vérifier et alerter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        144,
+        16
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Toutes les 5 minutes": {
+      "main": [
+        [
+          {
+            "node": "Vérifier et alerter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vérifier et alerter": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "fbdf0b3e-f957-4549-905e-ee054cca14f7",
+  "meta": {
+    "instanceId": "8130f57fae415683139811b2d51638f30d2fd4c001e5e0928ad85efb2ab9daa5"
+  },
+  "nodeGroups": [],
+  "id": "K8PMuQxWySaMMq2q",
+  "tags": []
+}

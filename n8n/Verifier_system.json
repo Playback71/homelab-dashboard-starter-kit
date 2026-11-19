@@ -1,0 +1,1099 @@
+{
+  "name": "Verifier system",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 4
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        16,
+        -80
+      ],
+      "id": "1f182819-ba73-4bc6-a437-a628a3a9b44f",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Code in JavaScript (page du rapport) : v2026.11.17-5 : « Détail des jours précédents » replié dans un menu (fermé par défaut),\n//   les 7 jours les plus récents d'abord, les plus anciens dans un 2e menu « Jours plus anciens » ; v2026.11.14-5 : titres des vérifications en bleu (comme DIAGNOSTIC) ; v2026.11.12-2 : détail des jours précédents\nconst rapport = $input.first().json;\nconst dateGeneration = new Date().toLocaleString('fr-CA', {\n  timeZone: 'America/Toronto',\n  dateStyle: 'full',\n  timeStyle: 'short'\n});\n\nconst STATUS_COLOR = { ok: '#3fb27f', warn: '#e3a73a', crit: '#e5534b' };\nconst TAG_LABEL = { ok: '[OK]', warn: '[WARN]', crit: '[CRIT]' };\n\nfunction escapeHtml(str) {\n  return String(str == null ? '' : str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\n}\n\n// --- Statistiques du rapport : temps, jetons, débit (calculées dans Code in JavaScript1) ---\nfunction duree(sec) {\n  if (sec == null) return null;\n  const m = Math.floor(sec / 60), s = sec % 60;\n  return m ? m + ' min ' + String(s).padStart(2, '0') + ' s' : s + ' s';\n}\nconst nb = n => Number(n || 0).toLocaleString('fr-CA');\nconst st = rapport.stats || null;\nlet statsHtml = '';\nif (st) {\n  const morceaux = [];\n  if (st.duree_totale_s != null) morceaux.push(`<span>⏱ Rapport généré en <b>${duree(st.duree_totale_s)}</b></span>`);\n  morceaux.push(`<span>🧠 Ollama : <b>${duree(st.duree_ollama_s)}</b> (${nb(st.appels_ollama)} appels)</span>`);\n  morceaux.push(`<span>📥 <b>${nb(st.jetons_lus)}</b> jetons lus</span>`);\n  morceaux.push(`<span>📤 <b>${nb(st.jetons_ecrits)}</b> jetons écrits</span>`);\n  morceaux.push(`<span>Σ <b>${nb(st.jetons_total)}</b> jetons</span>`);\n  if (st.debit_jetons_s != null) morceaux.push(`<span>⚡ <b>${Number(st.debit_jetons_s).toLocaleString('fr-CA')}</b> jetons/s</span>`);\n  statsHtml = `<div class=\"stats\">${morceaux.join('')}</div>`;\n}\n\n// --- Historique sur 30 jours : une pastille par jour et par système (le plus récent à droite) ---\nconst HIST_COULEUR = { ok: '#3fb27f', warn: '#e3a73a', crit: '#e5534b' };\nconst histo = Array.isArray(rapport.historique) ? rapport.historique : [];\nlet histoHtml = '';\nif (histo.length) {\n  const jourCourt = j => new Date(j + 'T12:00:00').toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' });\n  const lignes = rapport.services.map(s => {\n    const cases = histo.map(h => {\n      const st = h.statuts ? h.statuts[s.name] : null;\n      const c = st ? (HIST_COULEUR[st] || '#888') : '#333';\n      return `<span class=\"hcase\" style=\"background:${c}\" title=\"${jourCourt(h.jour)} : ${st ? String(st).toUpperCase() : 'pas de donnée'}\"></span>`;\n    }).join('');\n    const nbProb = histo.filter(h => h.statuts && h.statuts[s.name] && h.statuts[s.name] !== 'ok').length;\n    return `<div class=\"hligne\"><span class=\"hnom\">${escapeHtml(s.name)}</span><span class=\"hcases\">${cases}</span><span class=\"hcompte\" style=\"color:#e3a73a\">${nbProb ? nbProb + ' j' : ''}</span></div>`;\n  }).join('');\n  const debits = histo.map(h => h.debit_jetons_s).filter(v => typeof v === 'number');\n  const durees = histo.map(h => h.duree_totale_s).filter(v => typeof v === 'number');\n  const moy = a => a.reduce((x, y) => x + y, 0) / a.length;\n  const tendance = [];\n  if (debits.length) tendance.push(`Débit Ollama : aujourd'hui <b>${debits[debits.length - 1].toLocaleString('fr-CA')}</b> jetons/s, moyenne <b>${(Math.round(moy(debits) * 10) / 10).toLocaleString('fr-CA')}</b>`);\n  if (durees.length) tendance.push(`Durée du rapport : moyenne <b>${Math.round(moy(durees) / 60)} min</b>`);\n\n  // Détail des jours précédents : pourquoi un jour était en WARN ou en CRIT (aujourd'hui est déjà dans « À surveiller »)\n  // Le détail n'existe que pour les jours enregistrés avec Code in JavaScript1 v2026.11.12-2 ou plus récent.\n  const jourLong = j => new Date(j + 'T12:00:00').toLocaleDateString('fr-CA', { weekday: 'short', day: 'numeric', month: 'short' });\n  const passes = histo.slice(0, -1).filter(h => h.problemes && Object.keys(h.problemes).length).reverse();\n  const problemeHtml = (nom, p) => {\n    const c = HIST_COULEUR[p.status] || '#888';\n    const causes = (p.causes || []).filter(Boolean);\n    const verifs = (p.verifications || []).filter(v => v && (v.etape || v.commande));\n    const corr = p.correction || {};\n    return `\n      <div class=\"hprob\" style=\"border-left:3px solid ${c};\">\n        <div class=\"hprob-tete\"><strong>${escapeHtml(nom)}</strong> <span class=\"pill\" style=\"background:${c};\">${escapeHtml(String(p.status).toUpperCase())}</span>${p.heure ? ` <span class=\"hheure\">vu à ${escapeHtml(p.heure)}</span>` : ''}</div>\n        ${p.detail ? `<div>${escapeHtml(p.detail)}</div>` : ''}\n        ${causes.length ? `<div class=\"label\">Causes possibles</div><ul>${causes.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul>` : ''}\n        ${verifs.length ? `<div class=\"label\">Vérifications proposées</div><ul>${verifs.map(v => `<li>${escapeHtml(v.etape)}${v.ou ? ` — ${escapeHtml(v.ou)}` : ''}${v.commande ? `<pre class=\"cmd\">${escapeHtml(v.commande)}</pre>` : ''}</li>`).join('')}</ul>` : ''}\n        ${p.suggestion ? `<div class=\"label\">Solution proposée</div><div>${escapeHtml(p.suggestion)}</div>` : ''}\n        ${corr.description || corr.commande ? `<div>${escapeHtml(corr.description)}</div>${corr.commande ? `<pre class=\"cmd\">${escapeHtml(corr.commande)}</pre>` : ''}` : ''}\n      </div>`;\n  };\n  const JOURS_VISIBLES = 7;   // jours affichés directement dans le menu ; les autres vont dans « Jours plus anciens »\n  const jourHtml = h => {\n    const liste = Object.entries(h.problemes).sort((a, b) => (a[1].status === 'crit' ? 0 : 1) - (b[1].status === 'crit' ? 0 : 1));\n    return `\n    <details class=\"hjour\">\n      <summary>${escapeHtml(jourLong(h.jour))} : ${liste.length} problème(s) — ${escapeHtml(liste.map(([n]) => n).join(', '))}</summary>\n      ${liste.map(([n, p]) => problemeHtml(n, p)).join('')}\n    </details>`;\n  };\n  const recents = passes.slice(0, JOURS_VISIBLES).map(jourHtml).join('');\n  const anciens = passes.slice(JOURS_VISIBLES);\n  const anciensHtml = anciens.length ? `\n      <details class=\"hplus\">\n        <summary>Jours plus anciens : ${anciens.length} jour(s), du ${escapeHtml(jourLong(anciens[anciens.length - 1].jour))} au ${escapeHtml(jourLong(anciens[0].jour))}</summary>\n        ${anciens.map(jourHtml).join('')}\n      </details>` : '';\n  const detailJoursHtml = passes.length ? `\n    <details class=\"hdetails\">\n      <summary>Détail des jours précédents : ${passes.length} jour(s) avec un problème</summary>\n      ${recents}${anciensHtml}\n    </details>` : `\n    <div class=\"hdetails\">\n      <div class=\"hlegende\">Détail des jours précédents : aucun problème enregistré pour l'instant (conservé à partir du 12 nov. 2026, seulement pour les jours avec un problème).</div>\n    </div>`;\n  histoHtml = `\n  <details class=\"histo\" open>\n    <summary>Historique : ${histo.length} jour(s), du ${jourCourt(histo[0].jour)} au ${jourCourt(histo[histo.length - 1].jour)}</summary>\n    ${lignes}\n    <div class=\"hlegende\"><span class=\"hcase\" style=\"background:#3fb27f\"></span> OK &nbsp; <span class=\"hcase\" style=\"background:#e3a73a\"></span> WARN &nbsp; <span class=\"hcase\" style=\"background:#e5534b\"></span> CRIT &nbsp; <span class=\"hcase\" style=\"background:#333\"></span> pas de donnée &nbsp;·&nbsp; à droite : nombre de jours avec un problème</div>\n    ${tendance.length ? `<div class=\"hlegende\">${tendance.join(' &nbsp;·&nbsp; ')}</div>` : ''}\n    ${detailJoursHtml}\n  </details>`;\n}\n\n// --- Rangée du haut : coup d'œil rapide, juste nom + pastille ---\nconst glanceHtml = rapport.services.map(s => `\n    <div style=\"display:flex; align-items:center; gap:6px; background:#222; border-radius:20px; padding:6px 14px; font-size:0.95em;\">\n      <span style=\"width:8px; height:8px; border-radius:50%; background:${STATUS_COLOR[s.status] || '#888'}; flex-shrink:0;\"></span>\n      ${escapeHtml(s.name)}\n    </div>`).join('');\n\n// --- Bloc DIAGNOSTIC : ce qui se passe + vérifications ---\nfunction diagnosticBlock(s) {\n  const causes = (s.causes || []).filter(Boolean);\n  const verifs = (s.verifications || []).filter(v => v && (v.etape || v.commande));\n  let h = `<div class=\"block-title\">Diagnostic</div>`;\n\n  h += `<p class=\"text\">${escapeHtml(s.detail)}</p>`;\n\n  if (causes.length) {\n    h += `<div class=\"label\">Causes possibles</div>\n      <ul>${causes.map(c => `<li>${escapeHtml(c)}</li>`).join('')}</ul>`;\n  }\n\n  if (verifs.length) {\n    h += `<div class=\"label\">Vérifications à faire (elles ne modifient rien)</div>` + verifs.map((v, i) => `\n      <div class=\"step\">\n        <div><strong class=\"etape\">${i + 1}. ${escapeHtml(v.etape)}</strong>${v.ou ? ` — ${escapeHtml(v.ou)}` : ''}</div>\n        ${v.commande ? `<pre class=\"cmd\">${escapeHtml(v.commande)}</pre>` : ''}\n        ${v.normal ? `<div class=\"note\">Résultat normal : ${escapeHtml(v.normal)}</div>` : ''}\n        ${v.sinon ? `<div class=\"note\">Si différent : ${escapeHtml(v.sinon)}</div>` : ''}\n      </div>`).join('');\n  }\n\n  if (s.a_rapporter) {\n    h += `<div class=\"label\">À me rapporter pour continuer</div><p class=\"text\">${escapeHtml(s.a_rapporter)}</p>`;\n  }\n  return `<div class=\"block diag\">${h}</div>`;\n}\n\n// --- Bloc SOLUTION : action recommandée + correction ---\nfunction solutionBlock(s) {\n  const corr = s.correction || {};\n  const hasCorr = corr.description || corr.commande;\n  if (!s.suggestion && !hasCorr) return '';\n  let h = `<div class=\"block-title\">Solution</div>`;\n\n  if (s.suggestion) {\n    h += `<p class=\"text\">${escapeHtml(s.suggestion)}</p>`;\n  }\n\n  if (hasCorr) {\n    h += `<div class=\"label\">Action corrective (modifie quelque chose)</div>\n      <div class=\"step\">\n        ${corr.description ? `<div>${escapeHtml(corr.description)}</div>` : ''}\n        ${corr.commande ? `<pre class=\"cmd\">${escapeHtml(corr.commande)}</pre>` : ''}\n        ${corr.risque ? `<div class=\"note\">Risque : ${escapeHtml(corr.risque)}</div>` : ''}\n      </div>`;\n  }\n  return `<div class=\"block sol\">${h}</div>`;\n}\n\n// --- Services qui demandent attention (warn/crit seulement) ---\nconst attention = rapport.services.filter(s => s.status !== 'ok');\nconst attentionHtml = attention.length === 0\n  ? `<p style=\"color:#3fb27f;\">✓ Aucune action requise aujourd'hui.</p>`\n  : attention.map(s => `\n    <div class=\"card\" style=\"border-left: 4px solid ${STATUS_COLOR[s.status]};\">\n      <div class=\"card-head\">\n        <strong>${escapeHtml(s.name)}</strong>\n        <span class=\"pill\" style=\"background:${STATUS_COLOR[s.status]};\">${escapeHtml(String(s.status).toUpperCase())}</span>\n      </div>\n      ${diagnosticBlock(s)}\n      ${solutionBlock(s)}\n    </div>`).join('');\n\nconst logHtml = rapport.log.map(l => `\n    <div style=\"font-family: monospace; font-size: 0.95em; padding: 4px 0; color:#ddd;\">\n      ${escapeHtml(l.time)} <span style=\"color:${STATUS_COLOR[l.level] || '#888'}\">${TAG_LABEL[l.level] || '[?]'}</span> ${escapeHtml(l.message)}\n    </div>`).join('');\n\nconst html = `<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n  <meta charset=\"UTF-8\">\n  <title>Rapport du matin</title>\n  <style>\n    body {\n      font-family: -apple-system, sans-serif;\n      max-width: 800px;\n      margin: 40px auto;\n      padding: 20px;\n      background: #1a1a1a;\n      color: #e0e0e0;\n      line-height: 1.7;\n    }\n    h1 { color: #4fc3f7; border-bottom: 2px solid #4fc3f7; padding-bottom: 10px; }\n    .date { color: #bbb; margin-bottom: 20px; }\n    .stats { display:flex; flex-wrap:wrap; gap:8px 22px; background:#222; border-radius:6px; padding:10px 14px; margin: -8px 0 22px 0; color:#e0e0e0; }\n    .stats b { color:#4fc3f7; }\n    .histo { background:#222; border-radius:6px; padding:10px 14px; margin: 18px 0 26px 0; clear:both; }\n    .histo summary { margin-top:0; font-weight:bold; }\n    .hligne { display:flex; align-items:center; gap:10px; margin:3px 0; }\n    .hnom { width:230px; flex-shrink:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }\n    .hcases { display:flex; gap:2px; flex-wrap:nowrap; }\n    .hcase { display:inline-block; width:12px; height:16px; border-radius:2px; }\n    .hcompte { font-weight:bold; min-width:34px; }\n    .hlegende { margin-top:8px; display:flex; align-items:center; gap:4px; flex-wrap:wrap; }\n    .hlegende b { color:#4fc3f7; }\n    .hdetails { margin-top:16px; }\n    .hjour { margin:6px 0; }\n    .hjour summary { margin-top:0; }\n    .hdetails > summary { font-weight:bold; }\n    .hdetails > details, .hplus > details { margin-left:14px; }\n    .hplus { margin-top:10px; }\n    .hprob { background:#1d1d1d; border-radius:6px; padding:10px 14px; margin:8px 0 12px 0; }\n    .hprob-tete { display:flex; align-items:center; gap:10px; margin-bottom:6px; }\n    .hheure { color:#e0e0e0; font-size:0.9em; }\n    .glance { display:flex; flex-wrap:wrap; gap:8px; margin-bottom: 30px; }\n    h2 { font-size: 1.1em; color: #ddd; margin-top: 30px; }\n    summary { cursor: pointer; color: #ddd; margin-top: 20px; }\n\n    .card { background: #222; padding: 18px 20px; margin-bottom: 28px; border-radius: 6px; }\n    .card-head { display: flex; align-items: center; gap: 12px; font-size: 1.15em; margin-bottom: 16px; }\n    .pill { color: #111; font-weight: bold; font-size: 0.8em; padding: 2px 10px; border-radius: 12px; }\n\n    .block { padding: 16px 18px; border-radius: 6px; margin-top: 18px; }\n    .block.diag { background: #2a2a2a; border-top: 3px solid #4fc3f7; }\n    .block.sol  { background: #1f2d26; border-top: 3px solid #3fb27f; }\n    .block-title { font-size: 1.1em; font-weight: bold; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 10px; }\n    .diag .block-title { color: #4fc3f7; }\n    .sol  .block-title { color: #3fb27f; }\n\n    .text { margin: 8px 0 14px 0; }\n    .label { color: #f0f0f0; font-weight: bold; margin: 18px 0 8px 0; }\n    .step { margin: 10px 0 18px 0; }\n    /* Titres des vérifications en bleu, comme DIAGNOSTIC (plus précis que le thème du Journal, qui met le gras en blanc) */\n    .step strong.etape { color: #4fc3f7; }\n    .note { margin-top: 6px; color: #e0e0e0; }\n    ul { margin: 6px 0 6px 22px; padding: 0; }\n    li { margin-bottom: 6px; }\n    pre.cmd {\n      background: #111;\n      color: #f0f0f0;\n      padding: 12px 14px;\n      border-radius: 6px;\n      font-family: monospace;\n      font-size: 1em;\n      white-space: pre-wrap;\n      word-break: break-all;\n      user-select: all;\n      margin: 10px 0;\n    }\n  </style>\n</head>\n<body>\n  <h1>🌅 Rapport du matin - Homelab</h1>\n  <div class=\"date\">Généré le ${dateGeneration}</div>\n  ${statsHtml}\n\n  <div class=\"glance\">${glanceHtml}</div>\n  ${histoHtml}\n\n  <h2>À surveiller</h2>\n  ${attentionHtml}\n\n  <details>\n    <summary>Journal technique complet</summary>\n    ${logHtml}\n  </details>\n</body>\n</html>`;\n\nreturn [{ json: { html_content: html } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        -80
+      ],
+      "id": "23c25efc-a4e4-48b0-9375-a9e0c510bc5b",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "dataTableId": {
+          "__rl": true,
+          "value": "JYm2ZPLBxSODqIRX",
+          "mode": "list",
+          "cachedResultName": "rapport_matin",
+          "cachedResultUrl": "/projects/kSNbwfg4SsL5HrWE/datatables/JYm2ZPLBxSODqIRX"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyValue": "1"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "html_content": "={{ $('Code in JavaScript').item.json.html_content }}"
+          },
+          "matchingColumns": [
+            "html_content"
+          ],
+          "schema": [
+            {
+              "id": "html_content",
+              "displayName": "html_content",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2000,
+        144
+      ],
+      "id": "d96d46aa-b4a9-4214-9504-c5594bfd0b9e",
+      "name": "Upsert row(s)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Code in JavaScript1 : v2026.11.12-2 : historique : garde aussi le détail des problèmes de chaque jour (consultable dans le rapport)\nconst noms = $('Préparer systèmes').all();\nconst heure = () => new Date().toLocaleTimeString('en-GB', { hour12: false, timeZone: 'America/Toronto' });\nconst asArray = v => Array.isArray(v) ? v : [];\nconst asText = v => (typeof v === 'string' ? v : '');\n\nconst services = $input.all().map((it, i) => {\n  const name = noms[i].json.name;\n  let r;\n  try {\n    r = JSON.parse(it.json.message.content);\n  } catch (e) {\n    r = { status: 'warn', detail: 'Réponse du modèle illisible', suggestion: 'Relancer la vérification' };\n  }\n  const corr = (r.correction && typeof r.correction === 'object') ? r.correction : {};\n  return {\n    name,\n    status: noms[i].json.statut || r.status,\n    detail: r.detail,\n    suggestion: r.suggestion,\n    causes: asArray(r.causes),\n    verifications: asArray(r.verifications),\n    correction: {\n      description: asText(corr.description),\n      commande: asText(corr.commande),\n      risque: asText(corr.risque)\n    },\n    a_rapporter: asText(r.a_rapporter)\n  };\n});\n\n// ---- Statistiques du rapport (temps, jetons, débit) ----\n// Ollama renvoie pour chaque appel : prompt_eval_count (jetons lus), eval_count (jetons écrits),\n// eval_duration et total_duration (en nanosecondes).\nlet lus = 0, ecrits = 0, nsEcriture = 0, nsOllama = 0;\nfor (const it of $input.all()) {\n  const j = it.json || {};\n  lus += Number(j.prompt_eval_count) || 0;\n  ecrits += Number(j.eval_count) || 0;\n  nsEcriture += Number(j.eval_duration) || 0;\n  nsOllama += Number(j.total_duration) || 0;\n}\n\n// Heure de départ du workflow : lue dans le premier nœud (Schedule Trigger ou Webhook)\nfunction debutWorkflow() {\n  for (const nom of ['Schedule Trigger', 'Webhook']) {\n    try {\n      const j = $(nom).first().json;\n      const t = Date.parse(j.timestamp || '');\n      if (!isNaN(t)) return t;\n      if (nom === 'Webhook') return null;\n    } catch (e) {}\n  }\n  return null;\n}\nconst debut = debutWorkflow();\n\nconst stats = {\n  appels_ollama: $input.all().length,\n  duree_totale_s: debut ? Math.round((Date.now() - debut) / 1000) : null,\n  duree_ollama_s: Math.round(nsOllama / 1e9),\n  jetons_lus: lus,\n  jetons_ecrits: ecrits,\n  jetons_total: lus + ecrits,\n  debit_jetons_s: nsEcriture > 0 ? Math.round((ecrits / (nsEcriture / 1e9)) * 10) / 10 : null\n};\n\n// ---- Historique sur 30 jours (mémoire du workflow) ----\n// Une entrée par jour. Pour chaque système, on garde le PIRE statut vu dans la journée\n// (crit > warn > ok) : un rapport plus tard dans la journée n'efface plus un problème vu le matin.\n// On garde aussi le détail de chaque problème (diagnostic, solution) tel qu'il était à son pire moment,\n// pour pouvoir relire plus tard pourquoi un jour était en WARN ou en CRIT.\n// Les statistiques (durée, jetons, débit) sont celles du dernier rapport de la journée.\n// La mémoire n'est enregistrée que lors des exécutions automatiques (horaire de 4 h ou bouton du Journal),\n// pas avec « Execute workflow » dans l'éditeur.\nconst JOURS_HISTORIQUE = 30;\nconst RANG = { ok: 0, warn: 1, crit: 2 };\nconst rang = s => (RANG[s] !== undefined ? RANG[s] : 0);\nconst pire = (a, b) => (rang(b) > rang(a) ? b : a);\nconst coupe = (s, n) => { s = asText(s); return s.length > n ? s.slice(0, n) + '…' : s; };\n\n// Version courte d'un problème, pour limiter la taille de la mémoire du workflow\nfunction resume(s) {\n  return {\n    status: s.status,\n    detail: coupe(s.detail, 600),\n    suggestion: coupe(s.suggestion, 400),\n    causes: s.causes.slice(0, 4).map(c => coupe(c, 250)),\n    verifications: s.verifications.slice(0, 3).map(v => ({\n      etape: coupe(v && v.etape, 250), ou: coupe(v && v.ou, 150), commande: coupe(v && v.commande, 250)\n    })),\n    correction: { description: coupe(s.correction.description, 300), commande: coupe(s.correction.commande, 300) },\n    heure: heure().slice(0, 5)\n  };\n}\n\nconst memoire = $getWorkflowStaticData('global');\nconst aujourdhui = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Toronto' });   // AAAA-MM-JJ\nlet historique = Array.isArray(memoire.historique) ? memoire.historique : [];\n\nconst ancien = historique.find(h => h.jour === aujourdhui) || {};\nconst anciensStatuts = (ancien.statuts && typeof ancien.statuts === 'object') ? ancien.statuts : {};\nconst anciensProblemes = (ancien.problemes && typeof ancien.problemes === 'object') ? ancien.problemes : {};\n\nconst statutsJour = Object.assign({}, anciensStatuts);\nconst problemesJour = Object.assign({}, anciensProblemes);\nfor (const s of services) {\n  const st = s.status || 'ok';\n  const avant = anciensStatuts[s.name];\n  statutsJour[s.name] = avant ? pire(st, avant) : st;\n  // Le détail suit le pire statut : remplacé seulement si ce rapport est au moins aussi grave que le précédent\n  if (st !== 'ok' && rang(st) >= rang(avant || 'ok')) problemesJour[s.name] = resume(s);\n}\n\nhistorique = historique.filter(h => h.jour !== aujourdhui);\nhistorique.push({\n  jour: aujourdhui,\n  statuts: statutsJour,\n  problemes: problemesJour,\n  duree_totale_s: stats.duree_totale_s,\n  jetons_total: stats.jetons_total,\n  debit_jetons_s: stats.debit_jetons_s\n});\nhistorique.sort((a, b) => a.jour.localeCompare(b.jour));\nhistorique = historique.slice(-JOURS_HISTORIQUE);\nmemoire.historique = historique;\n\nconst log = services.map(s => ({ time: heure(), level: s.status, message: s.name + ' — ' + s.detail }));\nreturn [{ json: { timestamp: new Date().toISOString(), services, log, stats, historique } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        -288
+      ],
+      "id": "0e5d89cd-361c-43d2-84ef-380f325c8551",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "url": "http://IP_PRIVEE_4:PORT_4/api/4/all",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        256,
+        -32
+      ],
+      "id": "4b886214-1259-4602-b3dd-41b9618dffb8",
+      "name": "check_truenas",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "http://IP_PRIVEE_5:PORT_4/api/4/all",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        528,
+        -416
+      ],
+      "id": "dbe9fae4-e6ee-4853-b03c-1f7c01aa7b0a",
+      "name": "check_synology",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "https://IP_PRIVEE_2:PORT_2/api/v2/status/system",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "X-API-Key",
+              "value": "A_REMPLIR"
+            }
+          ]
+        },
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        880,
+        -592
+      ],
+      "id": "dce2d8dc-4f42-4291-abeb-43dc61cd3c18",
+      "name": "check_pfsense",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://IP_PRIVEE_1:PORT_1/api/template",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer A_REMPLIR"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "template",
+              "value": "{{ states.update | selectattr('state','eq','on') | map(attribute='name') | list }}"
+            }
+          ]
+        },
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        880,
+        -400
+      ],
+      "id": "5277d04b-92f6-4d27-8135-6568115940fa",
+      "name": "check_ha",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "wZPoA9lHH7wQMp9Z",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/wZPoA9lHH7wQMp9Z",
+          "cachedResultName": "Kuma - Statut résumé"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.4,
+      "position": [
+        1568,
+        -432
+      ],
+      "id": "059e897f-cbe7-48e0-b58f-256a5c05b802",
+      "name": "check_kuma",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Préparer systèmes : v2026.11.17-7 : fiche Kuma « NordVPN (tunnel) » (passerelle NORDVPN1_VPNV4 lue dans pfSense)\n//   à la place de « NordVPN Server » (ping du serveur par ISP Modem, ne voyait pas un tunnel coupé) ; v2026.11.16-4 : Uptime Kuma : fiche de chaque moniteur important (distant ou de la maison) et pannes des 24 h lues dans le journal des pannes\n// v2026.11.14-6 : nouvelle ligne « Ollama Mises à jour » (nœud check_ollama_updates)\nfunction lire(nom) {\n  try {\n    const items = $(nom).all();\n    if (!items.length) return null;\n    return items.length === 1 ? items[0].json : { elements: items.map(i => i.json) };\n  } catch (e) {\n    return null;\n  }\n}\nfunction court(obj, n) {\n  const s = typeof obj === 'string' ? obj : JSON.stringify(obj);\n  return s.length > n ? s.slice(0, n) + ' ...(tronqué)' : s;\n}\nconst arrondi = x => (typeof x === 'number' ? Math.round(x * 10) / 10 : x);\nconst maintenant = Date.now() / 1000;\n\n// Une alerte CRITICAL de Glances ne passe en WARN que si elle est encore en cours ou dure plus longtemps que ce seuil (en minutes)\nconst ALERTE_CRITIQUE_MIN_MINUTES = 60;\n\n// TrueNAS et Synology écrivent l'heure locale (Montréal) sans fuseau horaire.\n// Le service n8n-version tourne dans un conteneur en UTC : son heure sans fuseau est en UTC.\n// heureLocale() ramène tout à l'heure de Montréal ; ageDonnees() donne l'âge en heures.\nfunction heureLocale(checked, naifEstUtc) {\n  const s = String(checked || '');\n  if (naifEstUtc && s.length >= 19 && !/(Z|[+-]\\d\\d:?\\d\\d)$/.test(s)) {\n    const d = new Date(s.slice(0, 19) + 'Z');\n    if (!isNaN(d.getTime())) {\n      return d.toLocaleString('sv-SE', { timeZone: 'America/Toronto' }).replace(' ', 'T');\n    }\n  }\n  return s;\n}\nfunction ageDonnees(checked) {\n  try {\n    const local = new Date().toLocaleString('sv-SE', { timeZone: 'America/Toronto' }).replace(' ', 'T');\n    const a = Date.parse(local.slice(0, 19) + 'Z');\n    const b = Date.parse(String(checked).slice(0, 19) + 'Z');\n    if (isNaN(a) || isNaN(b)) return null;\n    return (a - b) / 3600000;\n  } catch (e) {\n    return null;\n  }\n}\n\nfunction nouveau() {\n  const e = { statut: 'ok', raisons: [] };\n  e.signaler = function (niveau, texte) {\n    e.raisons.push(texte);\n    if (niveau === 'crit') e.statut = 'crit';\n    else if (e.statut !== 'crit') e.statut = 'warn';\n  };\n  return e;\n}\n\nfunction glances(j) {\n  const e = nouveau();\n  const r = {};\n  if (j.cpu) {\n    r.cpu_pct = arrondi(j.cpu.total);\n    if (j.cpu.total >= 90) e.signaler('warn', 'Processeur à ' + arrondi(j.cpu.total) + ' %');\n    if (j.cpu.iowait !== undefined) r.iowait_pct = arrondi(j.cpu.iowait);\n  }\n  if (j.mem) {\n    r.ram_pct = arrondi(j.mem.percent);\n    if (j.mem.percent >= 90) e.signaler('warn', 'Mémoire à ' + arrondi(j.mem.percent) + ' %');\n  }\n  if (j.memswap) r.swap_pct = arrondi(j.memswap.percent);\n  if (j.load) r.charge = { min1: arrondi(j.load.min1), min5: arrondi(j.load.min5), coeurs: j.load.cpucore };\n  if (Array.isArray(j.fs)) {\n    const tries = j.fs.filter(d => typeof d.percent === 'number').sort((a, b) => b.percent - a.percent);\n    r.nombre_de_disques = tries.length;\n    r.disques_les_plus_remplis = tries.slice(0, 3).map(d => ({ montage: d.mnt_point, occupation_pct: arrondi(d.percent) }));\n    const pire = tries[0];\n    if (pire && pire.percent >= 90) e.signaler('crit', 'Disque ' + pire.mnt_point + ' à ' + arrondi(pire.percent) + ' %');\n    else if (pire && pire.percent >= 80) e.signaler('warn', 'Disque ' + pire.mnt_point + ' à ' + arrondi(pire.percent) + ' %');\n  }\n  if (j.uptime) r.uptime = j.uptime;\n  if (Array.isArray(j.containers)) {\n    r.conteneurs = j.containers.map(c => ({ nom: c.name, etat: c.status }));\n    const arretes = j.containers.filter(c => /exited|dead|unhealthy|restarting|paused|created|removing/i.test(String(c.status)));\n    if (arretes.length) e.signaler('warn', arretes.length + ' conteneur(s) arrêté(s) ou en échec : ' + arretes.map(c => c.name).join(', '));\n  }\n  if (Array.isArray(j.alert)) {\n    const recentes = j.alert.filter(a => a.end < 0 || (maintenant - a.end) < 86400);\n    const heureLoc = t => new Date(t * 1000).toLocaleString('sv-SE', { timeZone: 'America/Toronto' }).slice(11, 16);\n    const duree = a => (a.end > 0 && a.begin ? Math.round((a.end - a.begin) / 60) : null);\n    r.alertes_24h = recentes.map(a => ({ type: a.type, etat: a.state, debut: a.begin ? heureLoc(a.begin) : null, duree_minutes: duree(a), en_cours: a.end < 0, maximum: arrondi(a.max), moyenne: arrondi(a.avg) }));\n    const graves = recentes.filter(a => String(a.state).toUpperCase() === 'CRITICAL' && (a.end < 0 || (duree(a) !== null && duree(a) > ALERTE_CRITIQUE_MIN_MINUTES)));\n    if (graves.length) {\n      e.signaler('warn', graves.length + ' alerte(s) critique(s) longue(s) ou en cours dans les dernières 24 h : ' + graves.map(a => a.type + (a.end < 0 ? ' en cours' : ' pendant ' + duree(a) + ' min')).join(', '));\n    }\n  }\n  const data = Object.keys(r).length ? r : { brut: court(j, 3000) };\n  return { data, statut: e.statut, raisons: e.raisons };\n}\n\nfunction pfsense(j) {\n  const e = nouveau();\n  const d = j.data || {};\n  if (j.status !== 'ok') e.signaler('crit', \"L'API pfSense ne répond pas normalement\");\n  if (d.temp_c >= 75) e.signaler('warn', 'Température à ' + d.temp_c + ' °C');\n  if (d.cpu_usage >= 90) e.signaler('warn', 'Processeur à ' + d.cpu_usage + ' %');\n  if (d.mem_usage >= 90) e.signaler('warn', 'Mémoire à ' + d.mem_usage + ' %');\n  if (d.disk_usage >= 90) e.signaler('crit', 'Disque à ' + d.disk_usage + ' %');\n  else if (d.disk_usage >= 80) e.signaler('warn', 'Disque à ' + d.disk_usage + ' %');\n  const data = { api_status: j.status, uptime: d.uptime, temperature_c: d.temp_c, cpu_pct: d.cpu_usage, charge: d.cpu_load_avg, ram_pct: d.mem_usage, swap_pct: d.swap_usage, disque_pct: d.disk_usage };\n\n  // Snort : un service par interface (LAN, VLAN10, VLAN20)\n  const sv = lire('check_pfsense_services');\n  if (sv === null) {\n    e.signaler('warn', \"Vérification de Snort impossible : le nœud check_pfsense_services est absent ou n'est pas relié dans le workflow\");\n    data.snort = 'non vérifié';\n  } else if (sv.error || !Array.isArray(sv.data)) {\n    e.signaler('warn', 'Vérification de Snort impossible : ' + court(sv.error || 'réponse inattendue', 150));\n    data.snort = 'non vérifié';\n  } else {\n    const marche = s => s.status === true || /^(running|started|active|up)$/i.test(String(s.status));\n    const liste = sv.data.filter(s => /snort/i.test(String(s.name || '') + ' ' + String(s.description || '')));\n    const arretes = liste.filter(s => s.enabled !== false && !marche(s));\n    if (!liste.length) e.signaler('warn', 'Aucun service Snort trouvé dans la liste des services pfSense');\n    else if (arretes.length) e.signaler('crit', 'Snort arrêté sur ' + arretes.length + ' interface(s) sur ' + liste.length + ' : ' + arretes.map(s => s.description || s.name).join(', '));\n    data.snort = { services: liste.length, arretes: arretes.map(s => s.description || s.name) };\n  }\n  return { data, statut: e.statut, raisons: e.raisons };\n}\n\n// pfSense : journaux du pare-feu et alertes Snort lus dans Loki.\n// Les seuils et les raisons sont calculés dans le nœud check_pfsense_logs : ici on les reprend tels quels.\nfunction pfsenseJournaux(j) {\n  const e = nouveau();\n  (Array.isArray(j.alertes) ? j.alertes : []).forEach(a => e.signaler(a.niveau === 'crit' ? 'crit' : 'warn', a.texte));\n  const data = Object.assign({}, j);\n  delete data.alertes;\n  return { data, statut: e.statut, raisons: e.raisons };\n}\n\n// Grafana et Loki (CT 110) : versions installées comparées aux dernières publiées, calculées dans le nœud check_loki_updates\nfunction lokiMaj(j) {\n  const e = nouveau();\n  const liste = Array.isArray(j.produits) ? j.produits : [];\n  if (!liste.length) {\n    e.signaler('warn', 'Lecture des versions de Grafana et Loki impossible : ' + court(j.error || 'réponse inattendue', 150));\n    return { data: { erreur: j.error || 'réponse inattendue' }, statut: e.statut, raisons: e.raisons };\n  }\n  liste.forEach(p => {\n    if (p.erreur) {\n      e.signaler('warn', 'Version de ' + p.nom + ' impossible à lire : ' + court(p.erreur, 120));\n      return;\n    }\n    if (p.type) {\n      let msg = 'Mise à jour de ' + p.nom + ' disponible : ' + p.installee + ' vers ' + p.derniere;\n      msg += p.type === 'mineure' ? ' (mise à jour mineure : lire les notes de version)' : ' (correctif)';\n      if (p.recente) msg += \" ; publiée depuis moins de 14 jours : attendre avant de l'installer\";\n      e.signaler('warn', msg);\n    }\n    if (p.majeure) {\n      e.signaler('warn', 'Nouvelle version majeure de ' + p.nom + ' disponible : ' + p.majeure + ' (lire les notes de version avant de planifier)');\n    }\n  });\n  const data = {\n    produits: liste.map(p => p.erreur\n      ? { produit: p.nom, erreur: p.erreur }\n      : { produit: p.nom, version_installee: p.installee, derniere_version: p.derniere, type_de_mise_a_jour: p.type, publiee_le: p.publiee, publiee_depuis_moins_de_14_jours: p.recente, version_majeure_disponible: p.majeure })\n  };\n  return { data, statut: e.statut, raisons: e.raisons };\n}\n\nfunction ha(j) {\n  const e = nouveau();\n  let liste = j.data;\n  try { liste = JSON.parse(String(j.data).replace(/'/g, '\"')); } catch (err) {}\n  const n = Array.isArray(liste) ? liste.length : undefined;\n  if (n > 0) e.signaler('warn', n + ' mise(s) à jour disponible(s)');\n  return { data: { mises_a_jour_disponibles: liste, nombre: n }, statut: e.statut, raisons: e.raisons };\n}\n\n// ---- Uptime Kuma (v2026.11.16-4) ----\n// Fiches des moniteurs importants : l'IA sait ce qu'est chaque moniteur et n'invente plus (ex. the NordVPN server n'est pas un serveur de la maison).\n// distant = l'appareil n'est pas dans la maison : jamais d'alimentation, de câble ni de port de switch à vérifier.\nconst FICHES_KUMA = [\n  { motif: /nordvpn|server\\s*vpn/i, distant: true, etiquette: ' (tunnel VPN de pfSense, pas un appareil)',\n    description: \"Tunnel NordVPN de pfSense : ce moniteur lit dans l'API de pfSense l'état de la passerelle NORDVPN1_VPNV4 (serveur the NordVPN server, au Canada). Ce n'est pas un appareil de la maison : jamais d'alimentation, de câble ni de port de switch. En panne alors que ISP Provider (WAN) répond : Internet fonctionne mais le tunnel est coupé, et le kill switch de pfSense bloque Internet pour les appareils qui passent par NordVPN (tous sauf TrueNAS). Causes possibles : le client OpenVPN NordVPN de pfSense est arrêté ou bloqué, ou le serveur NordVPN est en maintenance. Ne jamais modifier la Monitor IP de la passerelle NORDVPN1_VPNV4 : ça coupe tout le réseau.\" },\n  { motif: /isp/i, distant: true,\n    description: \"Lit dans l'API de pfSense l'état de la passerelle WANGW : pfSense pingue 8.8.8.8 directement par le WAN. En panne : le réseau du fournisseur Internet (your ISP) ne répond plus.\" },\n  { motif: /google/i, distant: true,\n    description: \"Ping de Google depuis TrueNAS, qui sort par ISP Modem (pas par NordVPN).\" },\n  { motif: /modem/i, distant: false,\n    description: \"Modem ISP Modem (IP_PRIVEE_6), pfSense est dans sa DMZ.\" },\n  { motif: /^\\s*pf\\s*sense\\s*$/i, distant: false, description: \"Pare-feu pfSense (IP_PRIVEE_2).\" },\n  { motif: /pro\\s*max\\s*-?\\s*1\\b/i, distant: false, description: \"Switch UniFi USW Pro Max-1 (IP_PRIVEE_7), relié à pfSense.\" },\n  { motif: /pro\\s*max\\s*-?\\s*2\\b/i, distant: false,\n    description: \"Switch UniFi USW Pro Max-2 (IP_PRIVEE_8), relié à USW Pro Max-1. Proxmox1, Proxmox2 (donc n8n, Loki et Grafana) et le PC Ollama sont branchés derrière lui.\" },\n  { motif: /kuma/i, distant: false, description: \"Uptime Kuma est une app TrueNAS (IP_PRIVEE_4, port PORT_KUMA), pas un service systemd.\" }\n];\nconst ficheKuma = (nom) => FICHES_KUMA.find(f => f.motif.test(nom || '')) || null;\n\n// Journal des pannes (workflow n8n « Journal des pannes ») : heures exactes des pannes des 24 dernières heures\nlet JOURNAL_PANNES = null;\ntry {\n  JOURNAL_PANNES = await this.helpers.httpRequest({ method: 'GET', url: 'http://127.0.0.1:5678/webhook/journal-pannes', json: true, timeout: 15000 });\n  if (typeof JOURNAL_PANNES === 'string') JOURNAL_PANNES = JSON.parse(JOURNAL_PANNES);\n} catch (e) {\n  JOURNAL_PANNES = null;\n}\nconst heureMontreal = (iso) => (iso ? new Date(iso).toLocaleString('sv-SE', { timeZone: 'America/Toronto' }).slice(0, 16) : null);\n\nfunction kuma(j) {\n  const e = nouveau();\n  const liste = Array.isArray(j.monitors) ? j.monitors : [];\n  const bas = liste.filter(m => m.status !== 'up');\n  const faibles = liste.filter(m => m.status === 'up' && typeof m.uptime24h === 'number' && m.uptime24h < 99);\n  const etiquette = (m) => { const f = ficheKuma(m.name); return m.name + (f && f.distant ? (f.etiquette || ' (distant, hors de la maison)') : ''); };\n  if (bas.length) e.signaler('crit', bas.length + ' moniteur(s) hors ligne : ' + bas.map(etiquette).join(', '));\n  if (faibles.length) e.signaler('warn', faibles.map(m => etiquette(m) + ' à ' + m.uptime24h + ' % de disponibilité sur 24 h').join('; '));\n  const pire = liste.reduce((min, m) => (typeof m.uptime24h === 'number' && m.uptime24h < min ? m.uptime24h : min), 100);\n\n  // Fiche de chaque moniteur en panne ou faible\n  const decrire = (m) => {\n    const f = ficheKuma(m.name);\n    const o = { nom: m.name, distant: f ? f.distant : null, description: f ? f.description : null };\n    if (typeof m.uptime24h === 'number') o.disponibilite_24h_pct = m.uptime24h;\n    if (m.msg) o.message_kuma = court(m.msg, 200);\n    return o;\n  };\n\n  // Pannes des 24 dernières heures, en heure de Montréal (seule source permise pour les heures)\n  let pannes = null;\n  if (JOURNAL_PANNES && Array.isArray(JOURNAL_PANNES.pannes)) {\n    const limite = Date.now() - 24 * 3600 * 1000;\n    pannes = JOURNAL_PANNES.pannes\n      .filter(p => new Date(p.fin || Date.now()).getTime() >= limite)\n      .slice(0, 6)\n      .map(p => ({\n        debut: heureMontreal(p.debut),\n        fin: p.fin ? heureMontreal(p.fin) : null,\n        terminee: !!p.fin,\n        duree_min: p.duree_min,\n        cause_probable: p.cause ? p.cause.nom + ' : ' + p.cause.texte : null,\n        ordre: (p.ordre || []).slice(0, 8).map((a, k) => (k + 1) + '. ' + a.nom + ' tombé à ' + heureMontreal(a.tombe).slice(11) +\n          (a.revenu ? ', revenu à ' + heureMontreal(a.revenu).slice(11) : ', pas encore revenu'))\n      }));\n  }\n\n  const data = {\n    moniteurs: liste.length,\n    hors_ligne: bas.map(decrire),\n    disponibilite_faible: faibles.map(decrire),\n    disponibilite_24h_la_plus_basse_pct: pire,\n    pannes_24h: pannes,\n    journal_des_pannes: pannes === null ? 'indisponible : ne donne aucune heure de panne' : 'disponible'\n  };\n  return { data, statut: e.statut, raisons: e.raisons };\n}\n\n// Unifi : appareils (firmware) ; les applications Network et Protect sont vérifiées par check_unifi_apps_updates\nfunction unifi(j) {\n  const e = nouveau();\n  const liste = Array.isArray(j.data) ? j.data : [];\n  if (!liste.length) return { data: { brut: court(j, 3000) }, statut: null, raisons: [] };\n  const etat = a => String(a.state || '').toUpperCase();\n  const passage = ['UPDATING', 'GETTING_READY', 'ADOPTING', 'PENDING_ADOPTION'];\n  const hors = liste.filter(a => etat(a) !== 'ONLINE' && !passage.includes(etat(a)));\n  const transitoire = liste.filter(a => passage.includes(etat(a)));\n  const maj = liste.filter(a => a.firmwareUpdatable === true);\n  if (hors.length) e.signaler('crit', hors.length + ' appareil(s) hors ligne : ' + hors.map(a => a.name).join(', '));\n  if (transitoire.length) e.signaler('warn', transitoire.length + \" appareil(s) en cours de mise à jour ou d'adoption : \" + transitoire.map(a => a.name).join(', '));\n  if (maj.length) e.signaler('warn', 'Mise à jour du firmware disponible : ' + maj.map(a => a.name).join(', '));\n  const data = { appareils: liste.length, en_ligne: liste.filter(a => etat(a) === 'ONLINE').length, hors_ligne: hors.map(a => a.name), firmware_a_mettre_a_jour: maj.map(a => a.name) };\n  return { data, statut: e.statut, raisons: e.raisons };\n}\n\n// Applications UniFi (Network sur le CloudKey+, Protect sur l'UNVR) : versions comparées dans le nœud check_unifi_apps_updates\nfunction unifiAppsMaj(j) {\n  const e = nouveau();\n  const liste = Array.isArray(j.produits) ? j.produits : [];\n  liste.forEach(p => {\n    if (p.erreur) {\n      e.signaler('warn', 'Version de UniFi ' + p.nom + ' impossible à lire : ' + court(p.erreur, 120));\n      return;\n    }\n    if (p.majDisponible) {\n      e.signaler('warn', 'Mise à jour de UniFi ' + p.nom + ' disponible : ' + p.installe + ' vers ' + p.derniere);\n    }\n  });\n  const data = {\n    applications: liste.map(p => ({\n      application: 'UniFi ' + p.nom,\n      version_installee: p.installe,\n      derniere_version: p.derniereInconnue ? 'non trouvée' : p.derniere,\n      mise_a_jour_disponible: !!p.majDisponible\n    }))\n  };\n  return { data, statut: e.statut, raisons: e.raisons };\n}\n\nfunction proxmox(j) {\n  const e = nouveau();\n  const noeuds = (Array.isArray(j.data) ? j.data : [j]).filter(n => n && (n.type === undefined || n.type === 'node'));\n  if (!noeuds.length) return { data: { brut: court(j, 3000) }, statut: null, raisons: [] };\n  const r = noeuds.map(n => {\n    const o = { noeud: n.node, etat: n.status };\n    if (typeof n.cpu === 'number') {\n      o.cpu_pct = arrondi(n.cpu * 100);\n      if (n.cpu >= 0.9) e.signaler('warn', 'Processeur à ' + arrondi(n.cpu * 100) + ' %');\n    }\n    if (n.maxmem) {\n      const pct = (n.mem / n.maxmem) * 100;\n      o.ram_pct = arrondi(pct);\n      if (pct >= 90) e.signaler('warn', 'Mémoire à ' + arrondi(pct) + ' %');\n    }\n    if (n.maxdisk) {\n      const pct = (n.disk / n.maxdisk) * 100;\n      o.disque_pct = arrondi(pct);\n      if (pct >= 90) e.signaler('crit', 'Disque à ' + arrondi(pct) + ' %');\n      else if (pct >= 80) e.signaler('warn', 'Disque à ' + arrondi(pct) + ' %');\n    }\n    if (typeof n.uptime === 'number') o.uptime = Math.floor(n.uptime / 3600) + ' h ' + Math.floor((n.uptime % 3600) / 60) + ' min';\n    if (n.status && n.status !== 'online') e.signaler('crit', 'Nœud ' + n.node + ' : ' + n.status);\n    return o;\n  });\n  return { data: r, statut: e.statut, raisons: e.raisons };\n}\n\nfunction truenasApps(j) {\n  const e = nouveau();\n  if (j.ok !== true) {\n    e.signaler('warn', \"Lecture des mises à jour des apps TrueNAS impossible : \" + court(j.error || 'réponse inattendue', 150));\n    return { data: { erreur: j.error || 'réponse inattendue' }, statut: e.statut, raisons: e.raisons };\n  }\n  const liste = Array.isArray(j.updates) ? j.updates : [];\n  if (liste.length) {\n    e.signaler('warn', liste.length + \" mise(s) à jour d'app(s) disponible(s) : \" + liste.map(a => a.name).join(', '));\n  }\n  const age = ageDonnees(j.checked);\n  if (age !== null && age > 24) {\n    e.signaler('warn', 'Données des apps TrueNAS vieilles de ' + Math.round(age) + \" h (tâche cron arrêtée ?)\");\n  }\n  const data = {\n    apps_installees: j.total,\n    mises_a_jour_disponibles: liste.map(a => ({ app: a.name, version: a.version, nouvelle_version: a.latest })),\n    nombre: liste.length,\n    verifie_a: j.checked,\n    age_des_donnees_en_heures: age === null ? null : Math.max(0, Math.round(age))\n  };\n  return { data, statut: e.statut, raisons: e.raisons };\n}\n\nfunction synologyMaj(j) {\n  const e = nouveau();\n  if (j.ok !== true) {\n    e.signaler('warn', \"Lecture des mises à jour du Synology impossible : \" + court(j.error || 'réponse inattendue', 150));\n    return { data: { erreur: j.error || 'réponse inattendue' }, statut: e.statut, raisons: e.raisons };\n  }\n  const dsm = !!(j.dsm && j.dsm.available);\n  const liste = Array.isArray(j.updates) ? j.updates : [];\n  if (dsm) e.signaler('warn', 'Mise à jour de DSM disponible');\n  if (liste.length) {\n    e.signaler('warn', liste.length + ' mise(s) à jour de paquet(s) disponible(s) : ' + liste.map(a => a.name).join(', '));\n  }\n  const age = ageDonnees(j.checked);\n  if (age !== null && age > 24) {\n    e.signaler('warn', 'Données du Synology vieilles de ' + Math.round(age) + ' h (tâche planifiée arrêtée ?)');\n  }\n  const data = {\n    dsm_mise_a_jour_disponible: dsm,\n    paquets_installes: j.total,\n    paquets_a_mettre_a_jour: liste.map(a => ({ paquet: a.name, version: a.version, nouvelle_version: a.latest })),\n    nombre: liste.length,\n    verifie_a: j.checked,\n    age_des_donnees_en_heures: age === null ? null : Math.max(0, Math.round(age))\n  };\n  return { data, statut: e.statut, raisons: e.raisons };\n}\n\nfunction proxmoxMaj(j) {\n  const e = nouveau();\n  const liste = Array.isArray(j.data) ? j.data : null;\n  if (liste === null) {\n    const raison = j.errors ? JSON.stringify(j.errors) : (j.message || 'réponse inattendue');\n    e.signaler('warn', 'Lecture des mises à jour Proxmox impossible : ' + court(raison, 150));\n    return { data: { erreur: raison }, statut: e.statut, raisons: e.raisons };\n  }\n  const noms = liste.map(p => p.Package);\n  const importants = noms.filter(n => /^(pve-manager|proxmox-kernel|pve-kernel|qemu-server|pve-qemu-kvm|pve-firmware|pve-container|libpve)/.test(n));\n  const noyau = noms.some(n => /^(proxmox-kernel|pve-kernel)/.test(n));\n  if (liste.length) {\n    let msg = liste.length + ' mise(s) à jour de paquets disponible(s)';\n    if (importants.length) msg += ' dont : ' + importants.slice(0, 5).join(', ');\n    if (noyau) msg += ' ; un redémarrage du nœud est probablement nécessaire (noyau)';\n    e.signaler('warn', msg);\n  }\n  const data = {\n    nombre: liste.length,\n    paquets_importants: importants,\n    redemarrage_probable: noyau,\n    paquets: liste.slice(0, 25).map(p => ({ paquet: p.Package, version_actuelle: p.OldVersion, nouvelle_version: p.Version }))\n  };\n  return { data, statut: e.statut, raisons: e.raisons };\n}\n\nfunction n8nMaj(j) {\n  const e = nouveau();\n  if (j.ok !== true) {\n    e.signaler('warn', \"Lecture de la version de n8n impossible : \" + court(j.error || 'réponse inattendue', 150));\n    return { data: { erreur: j.error || 'réponse inattendue' }, statut: e.statut, raisons: e.raisons };\n  }\n  if (j.update) {\n    let msg = 'Mise à jour de n8n disponible : ' + j.installed + ' vers ' + j.latest;\n    if (j.major) msg += ' (mise à jour majeure : lire les notes de version avant de la faire)';\n    e.signaler('warn', msg);\n  }\n  const verifie = heureLocale(j.checked, true);\n  const age = ageDonnees(verifie);\n  if (age !== null && age > 24) {\n    e.signaler('warn', 'Données de version de n8n vieilles de ' + Math.round(age) + ' h (service arrêté ?)');\n  }\n  const data = { version_installee: j.installed, derniere_version: j.latest, mise_a_jour_majeure: !!j.major, verifie_a: verifie, age_des_donnees_en_heures: age === null ? null : Math.max(0, Math.round(age)) };\n  return { data, statut: e.statut, raisons: e.raisons };\n}\n\nfunction immichMaj(j) {\n  const e = nouveau();\n  const im = j.immich;\n  if (!im) return null; // la vérification d'Immich n'est pas encore active dans le script du Synology\n  if (im.ok !== true) {\n    e.signaler('warn', \"Lecture de la version d'Immich impossible : \" + court(im.error || 'réponse inattendue', 150));\n    return { data: { erreur: im.error || 'réponse inattendue' }, statut: e.statut, raisons: e.raisons };\n  }\n  if (im.update) {\n    let msg = \"Mise à jour d'Immich disponible : \" + im.installed + ' vers ' + im.latest;\n    if (im.major) msg += ' (mise à jour majeure : lire les notes de version avant de la faire)';\n    e.signaler('warn', msg);\n  }\n  const data = { version_installee: im.installed, derniere_version: im.latest, mise_a_jour_majeure: !!im.major, dossier_compose: im.compose_dir || 'inconnu' };\n  return { data, statut: e.statut, raisons: e.raisons };\n}\n\nfunction plexMaj(j) {\n  const e = nouveau();\n  const px = j.plex;\n  if (!px) return null; // la vérification de Plex n'est pas encore active dans le script du Synology\n  if (px.ok !== true) {\n    e.signaler('warn', 'Lecture de la version de Plex impossible : ' + court(px.error || 'réponse inattendue', 150));\n    return { data: { erreur: px.error || 'réponse inattendue' }, statut: e.statut, raisons: e.raisons };\n  }\n  if (px.update) {\n    e.signaler('warn', 'Mise à jour de Plex Media Server disponible : ' + px.installed + ' vers ' + px.latest);\n  }\n  const data = { version_installee: px.installed, derniere_version: px.latest };\n  return { data, statut: e.statut, raisons: e.raisons };\n}\n\n// =====================================================================\n// SAUVEGARDES et DISQUES : deux lignes qui regroupent plusieurs sources\n// Sources : check_proxmox1_backups, check_proxmox2_backups, check_proxmox1_disques, check_proxmox2_disques\n//           (HTTP Request vers l'API Proxmox), check_truenas_sante et check_synology_sante (fichiers JSON des scripts)\n// =====================================================================\nconst SAUVEGARDE_MAX_JOURS = 8;   // aucune sauvegarde réussie depuis plus longtemps = WARN\n\n// Synology : nombre de jours sans sauvegarde avant le WARN, selon la fréquence de chaque tâche.\n// Le nom de la tâche est comparé aux motifs dans l'ordre (le premier qui correspond gagne).\n// Une tâche qui ne correspond à rien garde SAUVEGARDE_MAX_JOURS (8 jours).\n// MÊME TABLEAU dans js/sante.js du site : modifier les deux ensemble.\nconst SEUILS_SYNOLOGY = [\n  { motif: /music/i,    jours: 35 },  // 1 fois par mois\n  { motif: /software/i, jours: 35 },  // 1 fois par mois\n  { motif: /docker/i,   jours: 3 },   // 4 fois par semaine\n  { motif: /ollama/i,   jours: 3 },   // 4 fois par semaine\n  { motif: /share/i,    jours: 4 },   // 3 fois par semaine\n  { motif: /dashboard|active backup|serveur de fichier/i, jours: 8 },  // Active Backup, 1 fois par semaine\n  { motif: /nas/i,      jours: 3 }    // 4 fois par semaine (en dernier : « nas » est un motif court)\n];\nconst seuilSynology = t => {\n  if (typeof t.max_jours === 'number') return t.max_jours;   // si le script fournit un jour son propre seuil\n  const s = SEUILS_SYNOLOGY.find(x => x.motif.test(String(t.nom || '')));\n  return s ? s.jours : SAUVEGARDE_MAX_JOURS;\n};\nconst SCRUB_MAX_JOURS = 45;       // dernier scrub ZFS plus vieux = WARN\nconst TEMP_DISQUE_MAX = 55;       // °C\nconst USURE_SSD_MAX = 80;         // % d'usure (NVMe percentage_used)\nconst VIE_PROXMOX_MIN = 20;       // % de vie restante (colonne Wearout de Proxmox)\n// Certains SSD WD Blue SA510 / 3D (modèles WDS…2B0A, ex. WDS500G2B0A-00SM50) ont un firmware qui donne l'USURE\n// dans l'attribut 230 au lieu de la VIE RESTANTE : Proxmox affiche alors 4 % de vie pour un disque usé à 4 %.\n// Pour ces modèles, on inverse : vie restante = 100 - wearout.\nconst SSD_USURE_INVERSEE = /WDS\\d+[GT]2B0A/i;\nconst vieRestante = d => (typeof d.wearout !== 'number') ? null : (SSD_USURE_INVERSEE.test(String(d.model || '')) ? 100 - d.wearout : d.wearout);\n\nconst jours = sec => Math.floor(sec / 86400);\nconst dateLoc = sec => new Date(sec * 1000).toLocaleString('sv-SE', { timeZone: 'America/Toronto' }).slice(0, 16).replace(' ', ' à ');\nconst echec = v => /fail|error|erreur|partial|cancel|abort|suspend|interrupt/i.test(String(v || ''));\n\n// Âge en jours d'une date locale \"AAAA-MM-JJTHH:MM:SS\" (null si inconnue)\nfunction ageJours(local) {\n  const h = local ? ageDonnees(local) : null;\n  return h === null ? null : Math.floor(h / 24);\n}\n\n// Lit une source ; signale si elle est absente ou en erreur. Retourne null dans ce cas.\nfunction source(e, nom, noeud, data) {\n  const j = lire(noeud);\n  if (j === null) {\n    e.signaler('warn', nom + \" : source absente (le nœud \" + noeud + \" n'existe pas, n'est pas relié ou n'a rien produit)\");\n    data[nom] = 'source absente';\n    return null;\n  }\n  if (j.error) {\n    e.signaler('warn', nom + ' : appel en échec (' + court(j.error, 120) + ')');\n    data[nom] = 'appel en échec';\n    return null;\n  }\n  return j;\n}\n\nfunction sauvegardes() {\n  const e = nouveau();\n  const data = {};\n\n  // Proxmox : tâches vzdump (Datacenter, Backup)\n  for (const [nom, noeud] of [['Proxmox 1', 'check_proxmox1_backups'], ['Proxmox 2', 'check_proxmox2_backups']]) {\n    const j = source(e, nom, noeud, data);\n    if (!j) continue;\n    const t = (Array.isArray(j.data) ? j.data : []).filter(x => x.type === 'vzdump' && x.status);\n    if (!t.length) {\n      e.signaler('warn', nom + \" : aucune sauvegarde dans l'historique des tâches\");\n      data[nom] = 'aucune sauvegarde trouvée';\n      continue;\n    }\n    t.sort((a, b) => b.starttime - a.starttime);\n    const derniere = t[0];\n    const reussie = t.find(x => x.status === 'OK');\n    const age = reussie ? jours(maintenant - reussie.starttime) : null;\n    if (derniere.status !== 'OK') e.signaler('warn', nom + ' : dernière sauvegarde en échec le ' + dateLoc(derniere.starttime) + (derniere.id ? ' (VM/CT ' + derniere.id + ')' : '') + ' : ' + court(derniere.status, 100));\n    if (!reussie) e.signaler('warn', nom + \" : aucune sauvegarde réussie dans l'historique\");\n    else if (age > SAUVEGARDE_MAX_JOURS) e.signaler('warn', nom + ' : aucune sauvegarde réussie depuis ' + age + ' jours');\n    data[nom] = {\n      derniere: dateLoc(derniere.starttime), resultat: derniere.status,\n      derniere_reussie: reussie ? dateLoc(reussie.starttime) : null, jours_depuis_reussie: age,\n      echecs_7_jours: t.filter(x => x.status !== 'OK' && maintenant - x.starttime < 7 * 86400).length\n    };\n  }\n\n  // TrueNAS : instantanés, réplications, Cloud Sync, Rsync\n  const tn = source(e, 'TrueNAS', 'check_truenas_sante', data);\n  if (tn) {\n    const age = ageDonnees(tn.checked);\n    if (age !== null && age > 24) e.signaler('warn', 'TrueNAS : données de santé vieilles de ' + Math.round(age) + ' h (tâche cron de truenas-sante.py arrêtée ?)');\n    const actives = (tn.taches || []).filter(x => x.active !== false);\n    actives.forEach(x => {\n      if (echec(x.etat) || x.erreur) e.signaler('warn', 'TrueNAS : ' + x.type + ' « ' + x.nom + ' » en échec' + (x.erreur ? ' : ' + court(x.erreur, 100) : ''));\n      const a = ageJours(x.derniere_execution);\n      if (x.type !== 'Instantané' && a !== null && a > SAUVEGARDE_MAX_JOURS) e.signaler('warn', 'TrueNAS : ' + x.type + ' « ' + x.nom + ' » pas exécutée depuis ' + a + ' jours');\n    });\n    data.TrueNAS = actives.map(x => ({ type: x.type, nom: x.nom, etat: x.etat, derniere: x.derniere_execution }));\n  }\n\n  // Synology : Hyper Backup\n  const sy = source(e, 'Synology', 'check_synology_sante', data);\n  if (sy) {\n    const age = ageDonnees(sy.checked);\n    if (age !== null && age > 24) e.signaler('warn', 'Synology : données de santé vieilles de ' + Math.round(age) + ' h (tâche planifiée de synology-sante.py arrêtée ?)');\n    const t = sy.taches || [];\n    if (!t.length && !(sy.erreurs || []).length) e.signaler('warn', 'Synology : aucune tâche Hyper Backup trouvée');\n    t.forEach(x => {\n      if (echec(x.resultat) || echec(x.etat)) e.signaler('warn', 'Synology : Hyper Backup « ' + x.nom + ' » en échec (' + (x.resultat || x.etat) + ')');\n      const a = ageJours(x.derniere_execution);\n      const max = seuilSynology(x);\n      if (a !== null && a > max) e.signaler('warn', 'Synology : Hyper Backup « ' + x.nom + ' » sans sauvegarde depuis ' + a + ' jours (maximum prévu : ' + max + ' jours)');\n    });\n    data.Synology = t.map(x => ({ tache: x.nom, resultat: x.resultat, derniere: x.derniere_execution, max_jours: seuilSynology(x) }));\n  }\n\n  [tn, sy].forEach((j, i) => (j && j.erreurs || []).forEach(m => e.signaler('warn', (i ? 'Synology' : 'TrueNAS') + ' : lecture partielle (' + court(m, 100) + ')')));\n  return { data, statut: e.statut, raisons: e.raisons };\n}\n\nfunction disques() {\n  const e = nouveau();\n  const data = {};\n\n  // Proxmox : liste des disques avec santé SMART et Wearout\n  for (const [nom, noeud] of [['Proxmox 1', 'check_proxmox1_disques'], ['Proxmox 2', 'check_proxmox2_disques']]) {\n    const j = source(e, nom, noeud, data);\n    if (!j) continue;\n    const l = Array.isArray(j.data) ? j.data : [];\n    l.forEach(d => {\n      const h = String(d.health || '').toUpperCase();\n      if (h && !['PASSED', 'OK', 'UNKNOWN'].includes(h)) e.signaler('crit', nom + ' : disque ' + d.devpath + ' (' + (d.model || '?') + ') SMART ' + h);\n      const vie = vieRestante(d);\n      if (vie !== null && vie < VIE_PROXMOX_MIN) e.signaler('warn', nom + ' : SSD ' + d.devpath + ' avec seulement ' + vie + ' % de vie restante');\n    });\n    data[nom] = l.map(d => ({ disque: d.devpath, modele: d.model, smart: d.health, vie_restante_pct: vieRestante(d) }));\n  }\n\n  // TrueNAS : pools ZFS et SMART\n  const tn = source(e, 'TrueNAS', 'check_truenas_sante', data);\n  if (tn) {\n    (tn.pools || []).forEach(p => {\n      if (p.etat && p.etat !== 'ONLINE') e.signaler('crit', 'TrueNAS : pool ' + p.nom + ' ' + p.etat);\n      else if (p.sain === false) e.signaler('crit', 'TrueNAS : pool ' + p.nom + ' signalé non sain');\n      if (p.scrub_erreurs > 0) e.signaler('warn', 'TrueNAS : le dernier scrub du pool ' + p.nom + ' a trouvé ' + p.scrub_erreurs + ' erreur(s)');\n      const a = ageJours(p.scrub_fin);\n      if (p.nom !== 'boot-pool' && a !== null && a > SCRUB_MAX_JOURS) e.signaler('warn', 'TrueNAS : aucun scrub du pool ' + p.nom + ' depuis ' + a + ' jours');\n    });\n    (tn.disques || []).forEach(d => {\n      const n = 'TrueNAS : disque ' + d.disque + (d.modele ? ' (' + d.modele + ')' : '');\n      if (d.smart_ok === false) e.signaler('crit', n + ' : test de santé SMART échoué');\n      if (d.secteurs_realloues > 0 || d.secteurs_en_attente > 0 || d.secteurs_illisibles > 0)\n        e.signaler('warn', n + ' : ' + (d.secteurs_realloues || 0) + ' secteur(s) réalloué(s), ' + (d.secteurs_en_attente || 0) + ' en attente, ' + (d.secteurs_illisibles || 0) + ' illisible(s)');\n      if (d.erreurs_media > 0) e.signaler('warn', n + ' : ' + d.erreurs_media + ' erreur(s) média');\n      if (d.usure_pct >= USURE_SSD_MAX) e.signaler('warn', n + ' : usure du SSD à ' + d.usure_pct + ' %');\n      if (d.temperature_c >= TEMP_DISQUE_MAX) e.signaler('warn', n + ' : température ' + d.temperature_c + ' °C');\n    });\n    data.TrueNAS = {\n      pools: (tn.pools || []).map(p => ({ pool: p.nom, etat: p.etat, dernier_scrub: p.scrub_fin, erreurs_scrub: p.scrub_erreurs })),\n      disques: (tn.disques || []).map(d => ({ disque: d.disque, smart_ok: d.smart_ok, temp_c: d.temperature_c, realloues: d.secteurs_realloues, en_attente: d.secteurs_en_attente, usure_pct: d.usure_pct }))\n    };\n  }\n\n  // Synology : pools, volumes et disques\n  const sy = source(e, 'Synology', 'check_synology_sante', data);\n  if (sy) {\n    (sy.stockage || []).forEach(p => { if (!p.normal) e.signaler('crit', 'Synology : ' + p.nom + ' en état ' + p.etat); });\n    (sy.disques || []).forEach(d => {\n      if (!d.normal) e.signaler(/fail|crash|critical/i.test(String(d.etat) + String(d.smart)) ? 'crit' : 'warn', 'Synology : ' + d.disque + ' (' + (d.modele || '?') + ') état ' + d.etat + ', SMART ' + (d.smart || '?'));\n      if (d.temperature_c >= TEMP_DISQUE_MAX) e.signaler('warn', 'Synology : ' + d.disque + ' à ' + d.temperature_c + ' °C');\n    });\n    data.Synology = {\n      stockage: (sy.stockage || []).map(p => ({ nom: p.nom, etat: p.etat })),\n      disques: (sy.disques || []).map(d => ({ disque: d.disque, etat: d.etat, smart: d.smart, temp_c: d.temperature_c }))\n    };\n  }\n  return { data, statut: e.statut, raisons: e.raisons };\n}\n\n// =====================================================================\n// ÉCHÉANCES : fichier echeances.json du site (modifié à la main), lu par le nœud check_echeances\n// Mêmes règles que la carte Échéances du dashboard (js/echeances.js)\n// =====================================================================\nconst ECHEANCE_CRIT_JOURS = 7;   // échéance à 7 jours ou moins (ou passée) = CRIT\nfunction joursJusqua(d) {\n  if (!d || !/^\\d{4}-\\d{2}-\\d{2}/.test(String(d))) return null;\n  const auj = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Toronto' });   // AAAA-MM-JJ\n  return Math.round((Date.parse(String(d).slice(0, 10) + 'T00:00:00Z') - Date.parse(auj + 'T00:00:00Z')) / 86400000);\n}\nfunction echeances(j) {\n  const e = nouveau();\n  const liste = Array.isArray(j.echeances) ? j.echeances : null;\n  const tests = Array.isArray(j.restaurations) ? j.restaurations : null;\n  if (liste === null && tests === null) {\n    e.signaler('warn', 'Fichier echeances.json illisible ou vide : ' + court(j.error || 'réponse inattendue', 150));\n    return { data: { erreur: 'echeances.json illisible' }, statut: e.statut, raisons: e.raisons };\n  }\n  const data = { echeances: [], tests_de_restauration: [] };\n  (liste || []).forEach(x => {\n    const r = joursJusqua(x.date);\n    const alerte = typeof x.alerte_jours === 'number' ? x.alerte_jours : 30;\n    data.echeances.push({ nom: x.nom, type: x.type, date: x.date, jours_restants: r });\n    if (r === null) return;\n    const quoi = x.nom + (r < 0 ? ' expiré depuis ' + (-r) + ' jour(s)' : ' expire dans ' + r + ' jour(s)') + ' (' + x.date + ')';\n    const action = x.action ? ' ; action : ' + court(x.action, 250) : '';\n    if (r <= ECHEANCE_CRIT_JOURS) e.signaler('crit', quoi + action);\n    else if (r <= alerte) e.signaler('warn', quoi + action);\n  });\n  (tests || []).forEach(t => {\n    const r = joursJusqua(t.dernier_test);\n    const age = r === null ? null : -r;\n    const max = typeof t.max_jours === 'number' ? t.max_jours : 90;\n    data.tests_de_restauration.push({ nom: t.nom, dernier_test: t.dernier_test, jours_depuis: age, maximum_jours: max });\n    const comment = t.comment ? ' ; comment : ' + court(t.comment, 250) : '';\n    if (age === null) e.signaler('warn', 'Test de restauration jamais fait : ' + t.nom + comment);\n    else if (age > max) e.signaler('warn', 'Test de restauration ' + t.nom + ' vieux de ' + age + ' jours (maximum ' + max + ')' + comment);\n  });\n  return { data, statut: e.statut, raisons: e.raisons };\n}\n\n// =====================================================================\n// TUNNELS ET VPN : tunnels Cloudflare (accès de l'extérieur) et passerelles pfSense (WAN et NordVPN)\n// Source : nœud check_tunnels_vpn\n// =====================================================================\nconst PERTE_MAX_PCT = 10;   // perte de paquets d'une passerelle à partir de laquelle on signale (WARN)\nfunction tunnelsVpn(j) {\n  const e = nouveau();\n  if (j.tunnels_erreur) e.signaler('warn', 'Tunnels Cloudflare non vérifiés : ' + court(j.tunnels_erreur, 150));\n  (j.tunnels || []).forEach(t => {\n    const et = String(t.etat || '').toLowerCase();\n    if (et === 'down' || et === 'inactive') e.signaler('crit', 'Tunnel Cloudflare « ' + t.nom + ' » ' + et + ' : les services publiés par ce tunnel sont injoignables de l\\'extérieur');\n    else if (et === 'degraded') e.signaler('warn', 'Tunnel Cloudflare « ' + t.nom + ' » dégradé (' + t.connexions + ' connexion(s) sur 4)');\n    else if (et === 'healthy' && t.connexions === 0) e.signaler('warn', 'Tunnel Cloudflare « ' + t.nom + ' » sans connexion active');\n  });\n  if (!j.tunnels_erreur && !(j.tunnels || []).length) e.signaler('warn', 'Aucun tunnel Cloudflare trouvé dans le compte');\n  if (j.passerelles_erreur) e.signaler('warn', 'Passerelles pfSense non vérifiées : ' + court(j.passerelles_erreur, 150));\n  (j.passerelles || []).forEach(g => {\n    const nom = g.nom + (g.vpn ? ' (VPN NordVPN)' : '');\n    if (!/^(online|up|ok)$/i.test(g.etat || '')) {\n      e.signaler('crit', 'Passerelle ' + nom + ' : ' + (g.etat || 'état inconnu') +\n        (g.vpn ? ' ; les VLAN qui sortent par le VPN n\\'ont plus Internet (killswitch)' : ' ; plus d\\'accès Internet par cette passerelle'));\n    } else if ((g.perte_pct || 0) >= PERTE_MAX_PCT || (g.sous_etat && !/^(none|)$/i.test(g.sous_etat))) {\n      e.signaler('warn', 'Passerelle ' + nom + ' instable : ' + (g.perte_pct != null ? g.perte_pct + ' % de perte' : '') +\n        (g.delai_ms != null ? ', ' + g.delai_ms + ' ms' : '') + (g.sous_etat && !/^none$/i.test(g.sous_etat) ? ' (' + g.sous_etat + ')' : ''));\n    }\n  });\n  if (!j.passerelles_erreur && !(j.passerelles || []).some(g => g.vpn)) e.signaler('warn', 'Aucune passerelle VPN (nom contenant NORD ou VPN) trouvée dans pfSense');\n  const data = {\n    tunnels: (j.tunnels || []).map(t => ({ tunnel: t.nom, etat: t.etat, connexions: t.connexions, centres_cloudflare: t.centres })),\n    passerelles: (j.passerelles || []).map(g => ({ passerelle: g.nom, vpn: g.vpn, etat: g.etat, perte_pct: g.perte_pct, delai_ms: g.delai_ms }))\n  };\n  return { data, statut: e.statut, raisons: e.raisons };\n}\n\n// =====================================================================\n// CONNEXIONS REFUSÉES : échecs de connexion à pfSense (interface web, SSH, sshguard) lus dans Loki\n// Source : nœud check_connexions\n// =====================================================================\nconst ECHECS_INTERNES_MAX = 5;   // tentatives ratées d'une même adresse interne en 24 h à partir desquelles on signale\nfunction connexions(j) {\n  const e = nouveau();\n  if (j.erreur) {\n    e.signaler('warn', 'Échecs de connexion non vérifiés : ' + court(j.erreur, 150));\n    return { data: { erreur: j.erreur }, statut: e.statut, raisons: e.raisons };\n  }\n  const ips = j.par_ip || [];\n  const externes = ips.filter(x => x.externe);\n  const internes = ips.filter(x => !x.externe && x.tentatives >= ECHECS_INTERNES_MAX);\n  if (externes.length) e.signaler('warn', externes.length + ' adresse(s) externe(s) ont essayé de se connecter à pfSense : ' +\n    externes.slice(0, 3).map(x => x.ip + ' (' + x.tentatives + ' fois, ' + x.types + ')').join('; ') + \" ; l'interface ou le SSH de pfSense est peut-être exposé\");\n  if (internes.length) e.signaler('warn', 'Échecs de connexion répétés depuis le réseau interne : ' +\n    internes.slice(0, 3).map(x => x.ip + ' (' + x.tentatives + ' fois, ' + x.types + ', dernière ' + x.derniere + ')').join('; '));\n  // sshguard répète les échecs déjà comptés (interface web, SSH) : il ne déclenche pas d'alerte à lui seul.\n  // Une adresse externe est déjà signalée plus haut ; une adresse interne seulement à partir de ECHECS_INTERNES_MAX.\n  const data = {\n    total_24h: j.total, par_type: j.par_type, adresses: ips.slice(0, 5), comptes_essayes: (j.comptes || []).slice(0, 5),\n    note: j.note || undefined\n  };\n  return { data, statut: e.statut, raisons: e.raisons };\n}\n\n// =====================================================================\n// OLLAMA : version installée sur le PC Ollama comparée à la dernière version stable de GitHub\n// Source : nœud check_ollama_updates\n// =====================================================================\nconst OLLAMA_ATTENTE_JOURS = 7;   // une version publiée depuis moins longtemps : on la signale, avec le conseil d'attendre\nfunction ollamaMaj(j) {\n  const e = nouveau();\n  if (j.erreur) {\n    e.signaler('warn', \"Version d'Ollama impossible à vérifier : \" + court(j.erreur, 150));\n    return { data: { erreur: j.erreur }, statut: e.statut, raisons: e.raisons };\n  }\n  const recente = typeof j.jours_depuis_publication === 'number' && j.jours_depuis_publication < OLLAMA_ATTENTE_JOURS;\n  if (j.type) {\n    let msg = \"Mise à jour d'Ollama disponible : \" + j.installee + ' vers ' + j.derniere;\n    msg += j.type === 'correctif' ? ' (correctif)' : ' (mise à jour ' + j.type + ' : lire les notes de version)';\n    if (recente) msg += ' ; publiée depuis moins de ' + OLLAMA_ATTENTE_JOURS + \" jours : attendre avant de l'installer\";\n    e.signaler('warn', msg);\n  }\n  const data = {\n    version_installee: j.installee, derniere_version: j.derniere, type_de_mise_a_jour: j.type,\n    publiee_le: j.publiee, publiee_depuis_moins_de_7_jours: recente\n  };\n  return { data, statut: e.statut, raisons: e.raisons };\n}\n\nconst generique = j => ({ data: j, statut: null, raisons: [] });\n\nconst systemes = [\n  ['pfSense / Snort', 'check_pfsense', pfsense],\n  ['pfSense Journaux (Loki)', 'check_pfsense_logs', pfsenseJournaux],\n  ['Grafana et Loki Mises à jour', 'check_loki_updates', lokiMaj],\n  ['TrueNAS', 'check_truenas', glances],\n  ['TrueNAS Apps', 'check_truenas_apps', truenasApps],\n  ['Synology', 'check_synology', glances],\n  ['Synology Mises à jour', 'check_synology_updates', synologyMaj],\n  ['Immich Mises à jour', 'check_synology_updates', immichMaj],\n  ['Plex Mises à jour', 'check_synology_updates', plexMaj],\n  ['Home Assistant', 'check_ha', ha],\n  ['Unifi', 'check_unifi', unifi],\n  ['UniFi Apps Mises à jour', ['check_unifi_apps_updates', 'check_unifi_network_updates'], unifiAppsMaj],\n  ['Proxmox 1', ['check_proxmox1', 'check_poxmox1'], proxmox],\n  ['Proxmox 2', ['check_proxmox2', 'check_poxmox2'], proxmox],\n  ['Proxmox 1 Mises à jour', ['check_proxmox1_updates', 'check_poxmox1_updates'], proxmoxMaj],\n  ['Proxmox 2 Mises à jour', ['check_proxmox2_updates', 'check_poxmox2_updates'], proxmoxMaj],\n  ['Uptime Kuma', 'check_kuma', kuma],\n  ['n8n Mises à jour', 'check_n8n_updates', n8nMaj],\n  ['Échéances', 'check_echeances', echeances],\n  ['Tunnels et VPN', 'check_tunnels_vpn', tunnelsVpn],\n  ['Connexions refusées', 'check_connexions', connexions],\n  ['Ollama Mises à jour', 'check_ollama_updates', ollamaMaj]\n];\nconst sortie = [];\nfor (const [nom, noeud, reduire] of systemes) {\n  let j = null;\n  for (const n of [].concat(noeud)) {\n    j = lire(n);\n    if (j !== null) break;\n  }\n  if (j === null) {\n    // Source absente : on le signale au lieu de l'ignorer en silence\n    const attendu = [].concat(noeud)[0];\n    sortie.push({ json: { name: nom, data: JSON.stringify({ erreur: 'source de données absente' }), statut: 'warn',\n      raisons: \"Source de données absente : le nœud \" + attendu + \" n'existe pas, n'est pas relié dans le workflow ou n'a pas produit de résultat\" } });\n    continue;\n  }\n  const res = j.error\n    ? { data: { erreur: 'Appel en échec', detail: court(j.error, 300) }, statut: 'crit', raisons: ['Appel en échec'] }\n    : reduire(j);\n  if (res === null) continue;\n  sortie.push({ json: { name: nom, data: court(res.data, 4000), statut: res.statut, raisons: res.raisons.join('; ') } });\n}\n// Lignes regroupées : Sauvegardes et Disques\nfor (const [nom, fn] of [['Sauvegardes', sauvegardes], ['Disques', disques]]) {\n  const res = fn();\n  sortie.push({ json: { name: nom, data: court(res.data, 4000), statut: res.statut, raisons: res.raisons.join('; ') } });\n}\nreturn sortie;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1792,
+        -512
+      ],
+      "id": "e563d0ca-7769-4b92-8f90-56b1f0189e21",
+      "name": "Préparer systèmes"
+    },
+    {
+      "parameters": {
+        "url": "https://IP_PRIVEE_3/proxy/network/integration/v1/sites/88f7af54-98f8-306a-a1c7-c9349722b1f6/devices?limit=200",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "A_REMPLIR"
+            }
+          ]
+        },
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        784,
+        -208
+      ],
+      "id": "a0394ab7-6edb-4c46-98cf-ef83df54a9d5",
+      "name": "check_unifi",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "https://IP_PRIVEE_9:PORT_5/api2/json/nodes",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "A_REMPLIR"
+            }
+          ]
+        },
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        736,
+        0
+      ],
+      "id": "365b3a8a-0ad5-486b-b16f-c9741fe64c6c",
+      "name": "check_poxmox1",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lancer-scan",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.2,
+      "position": [
+        16,
+        80
+      ],
+      "id": "5f0d972b-a56f-44dc-80b6-45b6a6ad925a",
+      "name": "Webhook",
+      "webhookId": "bd3af076-02b7-43d2-91aa-c1c2c65f963b"
+    },
+    {
+      "parameters": {
+        "url": "http://IP_PRIVEE_5:PORT_6/synology-updates.json",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        688,
+        -592
+      ],
+      "id": "4f7ef2b1-0c67-4cfc-94f8-7276b59b59ba",
+      "name": "check_synology_updates",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "https://IP_PRIVEE_9:PORT_5/api2/json/nodes/proxmox1/apt/update",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "A_REMPLIR"
+            }
+          ]
+        },
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        976,
+        -16
+      ],
+      "id": "85fbda39-b5cb-42e8-81f5-53e32453ac6c",
+      "name": "check_proxmox1_updates",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "https://IP_PRIVEE_10:PORT_5/api2/json/nodes/proxmox2/apt/update",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "A_REMPLIR"
+            }
+          ]
+        },
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1280,
+        -416
+      ],
+      "id": "0251ccc7-a25b-440e-824b-dc24abcad458",
+      "name": "check_proxmox2_updates",
+      "executeOnce": false,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "http://IP_PRIVEE_11:PORT_7/",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1424,
+        -592
+      ],
+      "id": "7bbdb93c-55fd-4446-9133-a0c09b1a064f",
+      "name": "check_n8n_updates",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "https://IP_PRIVEE_10:PORT_5/api2/json/nodes",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "A_REMPLIR"
+            }
+          ]
+        },
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1136,
+        -208
+      ],
+      "id": "3b29d7ea-12db-474f-967f-7091607e3075",
+      "name": "check_proxmox2",
+      "executeOnce": false,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "http://IP_PRIVEE_4:PORT_8/apps-updates.json",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        400,
+        -224
+      ],
+      "id": "63a5e1a4-e3c6-45ad-8ecc-d833707be9ab",
+      "name": "check_truenas_apps",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "https://IP_PRIVEE_2:PORT_2/api/v2/status/services",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "X-API-Key",
+              "value": "A_REMPLIR"
+            }
+          ]
+        },
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1072,
+        -592
+      ],
+      "id": "b813c8d5-f9c0-4fe1-831a-16a4f4668fc3",
+      "name": "check_pfsense_services",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// v2026.11.17-3 : chaque nouvelle signature Snort reçoit ses propres sources et destinations, avec le sens du trafic\n//                 (entrante depuis Internet, sortante vers Internet, ou entre deux appareils de la maison) :\n//                 l'IA ne doit plus associer une IP de la maison à une alerte qui vient d'Internet\n// v2026.11.15-3 : commentaire de l'alias raccourci (« ajouté le » au lieu de « ajouté par n8n le »)\n// v2026.11.15-2 : nom de domaine de l'IP (AbuseIPDB) ajouté à la raison du blocage et au rapport\n// v2026.11.15-1 : blocage aussi par nombre de tentatives (200) ou de ports (50), peu importe le score AbuseIPDB\n// check_pfsense_logs : pfSense / Snort lus dans Loki, réputation AbuseIPDB des IP externes, mise à jour de la liste de blocage pfSense\n// Tous les seuils se règlent ici : le nœud « Préparer systèmes » n'a rien à modifier.\nconst LOKI = 'http://IP_PRIVEE_12:PORT_9';\n\n// Clé gratuite d'AbuseIPDB (abuseipdb.com, Account, API). Colle-la entre les guillemets, jamais dans le chat.\nconst ABUSEIPDB_KEY = 'A_REMPLIR';\n\n// API REST de pfSense. Colle la clé entre les guillemets, jamais dans le chat.\n// Pour le mode « ecriture », la clé doit pouvoir modifier les alias et appliquer les changements.\nconst PFSENSE = 'https://IP_PRIVEE_2:PORT_2';\nconst PFSENSE_KEY = 'A_REMPLIR';\n\nconst BLOCAGE = {\n  alias: 'Bloc_scanner_ip',  // nom exact de l'alias pfSense\n  mode: 'ecriture',          // 'simulation' : propose seulement ; 'ecriture' : modifie l'alias et applique\n  ipPour24: 3,               // 3 adresses seules d'un même /24 sont remplacées par le /24\n  reseaux24Pour16: 0,        // 0 = jamais de /16 ; sinon nombre d'entrées d'un même /16 qui le remplacent\n  maxEntrees: 200,           // garde-fou : on n'écrit jamais une liste plus longue\n  // Réseaux protégés (hébergeurs où un /24 entier peut contenir des services légitimes) :\n  // les IP de ces réseaux sont bloquées une par une en /32 et ne sont JAMAIS regroupées en /24 ou /16.\n  // Ajoute ici d'autres réseaux au besoin, au format 'x.x.x.x/masque'.\n  reseauxProteges: [\n    '3.0.0.0/8', '13.0.0.0/8', '15.0.0.0/8', '16.0.0.0/8', '18.0.0.0/8', '23.0.0.0/8',\n    '34.0.0.0/8', '35.0.0.0/8', '44.0.0.0/8', '50.0.0.0/8', '52.0.0.0/8', '54.0.0.0/8',\n    '98.0.0.0/8', '99.0.0.0/8', '107.0.0.0/8', '174.0.0.0/8', '184.0.0.0/8',  // Amazon (AWS)\n    '20.0.0.0/8', '40.0.0.0/8', '51.0.0.0/8', '104.0.0.0/8',                  // Microsoft (Azure)\n    '8.8.8.0/24', '1.1.1.0/24',                                                // DNS publics\n  ],\n};\n\nconst SEUIL = {\n  hausse: 3,              // hausse signalée si la valeur dépasse 3 fois celle des 24 h précédentes\n  minBlocages: 2000,      // on ignore les hausses sous ce nombre de blocages WAN par 24 h\n  minSyn: 300,            // on ignore les hausses sous ce nombre de scans SYN par 24 h\n  portsScanner: 15,       // IP externe ayant sondé au moins ce nombre de ports différents\n  tentativesScanner: 50,  // IP externe avec au moins ce nombre de tentatives en 24 h\n  recurrenteMin: 10,      // IP déjà vue les jours précédents avec au moins ce nombre de tentatives\n  snortRepet: 10,         // même hôte avec au moins ce nombre d'alertes Snort identiques en 24 h\n  maxIp: 30,              // nombre maximal d'IP externes examinées (les plus actives)\n  scoreSuspect: 50,       // score AbuseIPDB à partir duquel une IP est dite suspecte\n  // Une IP est ajoutée à la liste de blocage si UNE de ces 3 conditions est vraie :\n  scoreBloquer: 75,       // 1) score AbuseIPDB d'au moins cette valeur\n  tentativesBloquer: 200, // 2) au moins ce nombre de tentatives en 24 h, peu importe le score (0 = désactivé)\n  portsBloquer: 50,       // 3) au moins ce nombre de ports différents en 24 h, peu importe le score (0 = désactivé)\n};\n\nconst FL = '{job=\"syslog\", app=\"filterlog\"}';\nconst SN = '{job=\"syslog\", app=\"snort\"}';\nconst WANBLK = ' |= \",igc3,match,block,in,\"';\nconst SYN = ' |~ \",tcp,[0-9]+,[0-9.]+,[0-9.]+,[0-9]+,[0-9]+,[0-9]+,S,\"';\nconst RE_SYN = ' | regexp `^(?:[^,]*,){8}4,(?:[^,]*,){7}tcp,[^,]*,(?P<src>[^,]*),[^,]*,[^,]*,(?P<dport>[^,]*),[^,]*,S,`';\nconst RE_IFACE = ' | regexp `^(?:[^,]*,){4}(?P<iface>[^,]*),[^,]*,(?P<action>[^,]*),`';\nconst RE_TRACKER = ' | regexp `^(?:[^,]*,){3}(?P<tracker>[^,]*),`';\nconst RE_SNORT = ' | regexp `\\\\[[0-9]+:[0-9]+:[0-9]+\\\\] (?P<msg>.*?) (?:\\\\[Classification: [^\\\\]]*\\\\] )?\\\\[Priority: (?P<prio>[0-9])\\\\] \\\\{(?P<proto>[A-Za-z0-9]+)\\\\} (?P<src>[0-9.]+)`';\n// Même chose avec la destination (« source:port -> destination:port ») : sert seulement aux nouvelles signatures\nconst RE_SNORT_FLUX = ' | regexp `\\\\[[0-9]+:[0-9]+:[0-9]+\\\\] (?P<msg>.*?) (?:\\\\[Classification: [^\\\\]]*\\\\] )?\\\\[Priority: (?P<prio>[0-9])\\\\] \\\\{(?P<proto>[A-Za-z0-9]+)\\\\} (?P<src>[0-9.]+)(?::[0-9]+)? -> (?P<dst>[0-9.]+)`';\n\nconst query = async (q) => {\n  let res;\n  try {\n    res = await this.helpers.httpRequest({\n      method: 'GET',\n      url: LOKI + '/loki/api/v1/query',\n      qs: { query: q },\n      json: true,\n      timeout: 60000,\n    });\n  } catch (e) {\n    // Loki explique son refus dans le corps de la réponse : on le garde\n    const rep = e && (e.response || (e.cause && e.cause.response));\n    const data = rep && (rep.data || rep.body);\n    const texte = data ? (typeof data === 'string' ? data : JSON.stringify(data)) : '';\n    throw new Error(String(e && e.message ? e.message : e) + (texte ? ' : ' + texte.slice(0, 260) : ''));\n  }\n  const body = typeof res === 'string' ? JSON.parse(res) : res;\n  if (!body || body.status !== 'success') {\n    throw new Error('Loki: ' + JSON.stringify(body).slice(0, 200));\n  }\n  return body.data.result;\n};\n\n// Une requête en échec ne fait perdre que son morceau : on note son nom et le message de Loki\nconst echecs = [];\nconst sur = async (nom, fn, defaut) => {\n  try {\n    return await fn();\n  } catch (e) {\n    echecs.push(nom + ' : ' + String(e && e.message ? e.message : e).slice(0, 300));\n    return defaut;\n  }\n};\n\n// Lignes brutes des scans SYN bloqués (24 h) : les ports se comptent ici, car Loki limite à 500 séries par requête\nconst lignesSyn = async () => {\n  const fin = Date.now() * 1e6;\n  const debut = fin - 24 * 3600 * 1e9;\n  let res;\n  try {\n    res = await this.helpers.httpRequest({\n      method: 'GET',\n      url: LOKI + '/loki/api/v1/query_range',\n      qs: { query: FL + WANBLK + SYN, start: String(debut), end: String(fin), limit: 5000, direction: 'backward' },\n      json: true,\n      timeout: 60000,\n    });\n  } catch (e) {\n    const rep = e && (e.response || (e.cause && e.cause.response));\n    const data = rep && (rep.data || rep.body);\n    const texte = data ? (typeof data === 'string' ? data : JSON.stringify(data)) : '';\n    throw new Error(String(e && e.message ? e.message : e) + (texte ? ' : ' + texte.slice(0, 260) : ''));\n  }\n  const body = typeof res === 'string' ? JSON.parse(res) : res;\n  if (!body || body.status !== 'success') throw new Error('Loki: ' + JSON.stringify(body).slice(0, 200));\n  const parPort = {};\n  const portsIp = {};\n  let nb = 0;\n  (body.data.result || []).forEach((flux) => {\n    (flux.values || []).forEach((v) => {\n      const f = String(v[1]).split(',');\n      const i = f.indexOf('tcp');\n      if (f[8] !== '4' || i !== 16) return;\n      const src = f[18], dport = f[21];\n      if (!src || !dport) return;\n      nb++;\n      parPort[dport] = (parPort[dport] || 0) + 1;\n      (portsIp[src] = portsIp[src] || new Set()).add(dport);\n    });\n  });\n  return { parPort, portsIp, nb };\n};\n\nconst count = (sel, filt, win, off) =>\n  'sum(count_over_time(' + sel + filt + ' [' + win + ']' + (off ? ' offset ' + off : '') + ')) or vector(0)';\n\nconst total = async (q) => {\n  const r = await query(q);\n  return r.length ? Math.round(Number(r[0].value[1])) : 0;\n};\n\nconst rows = async (q, keys) => {\n  const r = await query(q);\n  return r\n    .filter((x) => x.metric && keys.every((k) => x.metric[k]))\n    .map((x) => {\n      const o = { n: Math.round(Number(x.value[1])) };\n      keys.forEach((k) => { o[k] = x.metric[k]; });\n      return o;\n    })\n    .sort((a, b) => b.n - a.n);\n};\nconst top = (q, key) => rows(q, [key]);\n\nconst nomRegle = (t) =>\n  t === '1000000103' ? 'Blocage par défaut (aucune règle ne l\\'autorisait)'\n  : /^17700/.test(t) ? 'pfBlockerNG (règle automatique ' + t + ')'\n  : 'Règle pfSense ' + t;\n\n// Nom de domaine d'une IP selon AbuseIPDB : le nom inverse (ex. scanner.censys.io) s'il est parlant,\n// sinon le domaine du propriétaire (ex. linode.com). Un nom inverse qui répète l'IP (172-105-102-42.ip...) n'apprend rien.\nconst nomDomaine = (d) => {\n  const ip = String(d.ipAddress || '');\n  const morceaux = ip.split('.');\n  const hote = Array.isArray(d.hostnames) && d.hostnames.length ? String(d.hostnames[0]) : '';\n  const repeteIp = morceaux.length === 4 && morceaux.every((o) => hote.includes(o));\n  const nom = hote && !repeteIp ? hote : String(d.domain || '');\n  return nom.slice(0, 45);\n};\n\n// Réputation d'une IP : n8n interroge AbuseIPDB, Ollama ne vérifie rien lui-même\nconst abuse = async (ip) => {\n  const res = await this.helpers.httpRequest({\n    method: 'GET',\n    url: 'https://api.abuseipdb.com/api/v2/check',\n    qs: { ipAddress: ip, maxAgeInDays: 90 },\n    headers: { Key: ABUSEIPDB_KEY, Accept: 'application/json' },\n    json: true,\n    timeout: 20000,\n  });\n  const o = typeof res === 'string' ? JSON.parse(res) : res;\n  const d = (o && o.data) || {};\n  return {\n    score: Number(d.abuseConfidenceScore),\n    pays: d.countryCode || '',\n    fai: String(d.isp || '').slice(0, 28),\n    type: String(d.usageType || '').slice(0, 22),\n    rapports: Number(d.totalReports) || 0,\n    domaine: nomDomaine(d),\n  };\n};\n\n// ---- Regroupement des adresses en réseaux (calcul exact, sans IA) ----\nconst toInt = (ip) => ip.split('.').reduce((a, o) => a * 256 + Number(o), 0);\nconst toIp = (n) => [Math.floor(n / 16777216) % 256, Math.floor(n / 65536) % 256, Math.floor(n / 256) % 256, n % 256].join('.');\n\nconst lire = (s) => {\n  const m = String(s).trim().match(/^(\\d{1,3}(?:\\.\\d{1,3}){3})(?:\\/(\\d{1,2}))?$/);\n  if (!m) return null;\n  const octets = m[1].split('.').map(Number);\n  if (octets.some((o) => o > 255)) return null;\n  const p = m[2] === undefined ? 32 : Number(m[2]);\n  if (p < 8 || p > 32) return null;\n  const taille = Math.pow(2, 32 - p);\n  return { net: Math.floor(toInt(m[1]) / taille) * taille, p: p };\n};\n// Adresse de la maison (privée) ou d'Internet\nconst privee = (ip) => { const e = lire(ip); return !!e && reserve(e); };\nconst origineDe = (ip) => (privee(ip) ? 'appareil de la maison' : 'Internet');\nconst sensDe = (src, dst) => {\n  const s = privee(src), d = privee(dst);\n  if (!s) return 'entrante : depuis Internet vers ' + dst;\n  if (!d) return 'sortante : appareil de la maison vers Internet';\n  return 'interne : entre deux appareils de la maison';\n};\n\nconst texte = (e) => (e.p === 32 ? toIp(e.net) : toIp(e.net) + '/' + e.p);\nconst tailleDe = (e) => Math.pow(2, 32 - e.p);\nconst couvre = (a, b) => a.p <= b.p && b.net >= a.net && b.net < a.net + tailleDe(a);\nconst norm = (s) => { const e = lire(s); return e ? texte(e) : String(s); };\n\nconst reserve = (e) => {\n  const a = Math.floor(e.net / 16777216);\n  const b = Math.floor(e.net / 65536) % 256;\n  return a === 0 || a === 10 || a === 127 || a >= 224 ||\n    (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);\n};\n\nfunction consolider(actuelles, nouvelles, opt) {\n  const refuses = [];\n  const gardes = [];   // entrées existantes illisibles ou privées : on ne les touche jamais\n  const lues = [];\n  const ajouter = (s, nouvelle) => {\n    const e = lire(s);\n    if (!e || reserve(e)) {\n      if (nouvelle) refuses.push(String(s) + (e ? ' (adresse privée ou réservée)' : ' (format illisible)'));\n      else gardes.push(String(s));\n      return;\n    }\n    lues.push(Object.assign(e, { nouvelle: nouvelle }));\n  };\n  actuelles.forEach((s) => ajouter(s, false));\n  nouvelles.forEach((s) => ajouter(s, true));\n\n  // 1) doublons, puis entrées déjà couvertes par un réseau plus large\n  const vus = new Map();\n  lues.forEach((e) => {\n    const k = e.net + '/' + e.p;\n    if (!vus.has(k)) vus.set(k, e);\n    else if (!e.nouvelle) vus.get(k).nouvelle = false;\n  });\n  let liste = Array.from(vus.values());\n  liste = liste.filter((e) => !liste.some((o) => o !== e && o.p < e.p && couvre(o, e)));\n\n  // 2) plusieurs adresses seules d'un même /24 : on les remplace par le /24\n  const remplacements = [];\n  const proteges = (opt.reseauxProteges || []).map(lire).filter(Boolean);\n  const protegee = (e) => proteges.some((o) => couvre(o, e));\n  const regrouper = (pMin, pCible, seuil) => {\n    const groupes = new Map();\n    liste.filter((e) => e.p > pCible && e.p >= pMin && !protegee(e)).forEach((e) => {\n      const cle = Math.floor(e.net / Math.pow(2, 32 - pCible));\n      if (!groupes.has(cle)) groupes.set(cle, []);\n      groupes.get(cle).push(e);\n    });\n    groupes.forEach((membres, cle) => {\n      if (membres.length >= seuil) {\n        const reseau = { net: cle * Math.pow(2, 32 - pCible), p: pCible, nouvelle: membres.some((m) => m.nouvelle) };\n        remplacements.push({ reseau: texte(reseau), remplace: membres.map(texte).sort() });\n        liste = liste.filter((e) => !membres.includes(e));\n        liste.push(reseau);\n      }\n    });\n  };\n  regrouper(25, 24, opt.ipPour24);\n  // 3) facultatif : plusieurs entrées d'un même /16 : on les remplace par le /16\n  if (opt.reseaux24Pour16 > 0) regrouper(17, 16, opt.reseaux24Pour16);\n  liste = liste.filter((e) => !liste.some((o) => o !== e && o.p < e.p && couvre(o, e)));\n\n  const finale = liste.sort((a, b) => a.net - b.net || a.p - b.p).map(texte).concat(gardes);\n  const avant = new Set(actuelles.map(norm));\n  const ajoutees = finale.filter((s) => !avant.has(s) && !remplacements.some((r) => r.reseau === s));\n  return { finale: finale, remplacements: remplacements, ajoutees: ajoutees, refuses: refuses };\n}\n\n// Chaque entrée existante doit rester couverte par la nouvelle liste\nconst toutesCouvertes = (actuelles, finale) => {\n  const f = finale.map(lire).filter(Boolean);\n  return actuelles.every((s) => {\n    const e = lire(s);\n    return !e || reserve(e) || f.some((o) => couvre(o, e));\n  });\n};\n\nconst pf = async (etape, method, chemin, corps) => {\n  const options = {\n    method: method,\n    url: PFSENSE + chemin,\n    headers: { 'X-API-Key': PFSENSE_KEY, Accept: 'application/json' },\n    json: true,\n    skipSslCertificateValidation: true,\n    timeout: 60000,\n  };\n  if (corps !== undefined) options.body = corps;\n  try {\n    const res = await this.helpers.httpRequest(options);\n    return typeof res === 'string' ? JSON.parse(res) : res;\n  } catch (e) {\n    // On indique l'étape qui échoue et la réponse de l'API pfSense (elle explique souvent le refus)\n    // n8n range la réponse de pfSense à des endroits différents selon la version : on les essaie tous\n    const rep = e && (e.response || (e.cause && e.cause.response));\n    const cand = [rep && (rep.data || rep.body), e && e.context && e.context.data, e && e.description, e && e.cause && e.cause.body, e && e.messages];\n    const data = cand.find((x) => x && (typeof x !== 'object' || Object.keys(x).length));\n    const suite = data ? ' : ' + (typeof data === 'string' ? data : JSON.stringify(data)).slice(0, 400) : '';\n    throw new Error(etape + ' : ' + String(e && e.message ? e.message : e) + suite);\n  }\n};\nconst trouverAlias = async (etape) => {\n  const o = await pf(etape, 'GET', '/api/v2/firewall/aliases');\n  const liste = Array.isArray(o && o.data) ? o.data : [];\n  const alias = liste.find((a) => a.name === BLOCAGE.alias);\n  if (!alias) throw new Error('alias introuvable : ' + BLOCAGE.alias + ' (alias existants : ' + liste.map((a) => a.name).join(', ') + ')');\n  if (!Array.isArray(alias.address)) throw new Error(\"liste d'adresses illisible dans l'alias\");\n  return alias;\n};\n\n// pfSense exige un masque sur chaque adresse d'un alias réseau : une IP seule s'écrit x.x.x.x/32\nconst versPf = (a) => (/^\\d{1,3}(\\.\\d{1,3}){3}$/.test(a) ? a + '/32' : a);\n\n// Raison du blocage de chaque IP, écrite dans le commentaire de l'alias pfSense\nconst raisonsBlocage = {};\n\n// Met à jour la liste de blocage (simulation par défaut)\nasync function majListeBlocage(nouvelles) {\n  const r = { mode: BLOCAGE.mode, alias: BLOCAGE.alias };\n  if (!PFSENSE_KEY) return Object.assign(r, { etat: 'non_configuree' });\n  const alias = await trouverAlias(\"lecture de l'alias\");\n  const actuelles = alias.address;\n  const c = consolider(actuelles, nouvelles, BLOCAGE);\n  r.entrees_avant = actuelles.length;\n  r.entrees_apres = c.finale.length;\n  const avant = new Set(actuelles.map(norm));\n  const apres = new Set(c.finale.map(norm));\n  const change = avant.size !== apres.size || Array.from(apres).some((s) => !avant.has(s));\n  if (!change) return Object.assign(r, { etat: 'inchangee' });\n\n  r.nb_ips_ajoutees = c.ajoutees.length;\n  r.ips_ajoutees = c.ajoutees.slice(0, 10).map((ip) => raisonsBlocage[ip] ? ip + ' (' + raisonsBlocage[ip] + ')' : ip);\n  r.regroupements = c.remplacements.slice(0, 5).map((x) => ({ reseau: x.reseau, remplace: x.remplace.slice(0, 6), nombre: x.remplace.length }));\n  if (c.finale.length > BLOCAGE.maxEntrees) {\n    return Object.assign(r, { etat: 'erreur', erreur: 'liste trop longue (' + c.finale.length + ' entrées, maximum ' + BLOCAGE.maxEntrees + ')' });\n  }\n  if (!toutesCouvertes(actuelles, c.finale)) {\n    return Object.assign(r, { etat: 'erreur', erreur: \"garde-fou : une entrée existante ne serait plus couverte, rien n'est écrit\" });\n  }\n  if (BLOCAGE.mode !== 'ecriture') return Object.assign(r, { etat: 'a_mettre_a_jour' });\n\n  // Écriture : on garde le commentaire de chaque entrée existante\n  const details = Array.isArray(alias.detail) ? alias.detail : [];\n  const detailDe = new Map();\n  actuelles.forEach((a, i) => detailDe.set(norm(a), String(details[i] || '')));\n  const jour = new Date().toISOString().slice(0, 10);\n  const nouveauxDetails = c.finale.map((a) => {\n    if (detailDe.has(norm(a))) return detailDe.get(norm(a));\n    if (c.remplacements.some((x) => x.reseau === a)) return 'regroupé le ' + jour;\n    const ip = a.replace(/\\/32$/, '');\n    return 'ajouté le ' + jour + (raisonsBlocage[ip] ? ' (' + raisonsBlocage[ip] + ')' : '');\n  });\n  await pf(\"modification de l'alias (PATCH)\", 'PATCH', '/api/v2/firewall/alias', { id: alias.id, address: c.finale.map(versPf), detail: nouveauxDetails });\n  await pf('application des changements (apply)', 'POST', '/api/v2/firewall/apply', {});\n  const verif = await trouverAlias(\"relecture de l'alias\");\n  if (verif.address.length !== c.finale.length) {\n    return Object.assign(r, { etat: 'erreur', erreur: \"l'alias relu contient \" + verif.address.length + ' entrées au lieu de ' + c.finale.length });\n  }\n  return Object.assign(r, { etat: 'mise_a_jour' });\n}\n\ntry {\n  // Requête de base : si elle échoue, Loki est vraiment injoignable\n  const fl1h = await total(count(FL, '', '1h'));\n\n  const [wan24, wanPrev, syn24, synPrev, snort24, snortPrev, snortP1,\n         histo48, histo72,\n         scanners, syn, sigs, sigsSeen, snortSrc, paires, regles, ifaces, flux] = await Promise.all([\n    sur('blocages WAN 24 h', () => total(count(FL, WANBLK, '24h')), 0),\n    sur('blocages WAN 24 h précédentes', () => total(count(FL, WANBLK, '24h', '24h')), 0),\n    sur('scans SYN 24 h', () => total(count(FL, WANBLK + SYN, '24h')), 0),\n    sur('scans SYN 24 h précédentes', () => total(count(FL, WANBLK + SYN, '24h', '24h')), 0),\n    sur('alertes Snort 24 h', () => total(count(SN, '', '24h')), 0),\n    sur('alertes Snort 24 h précédentes', () => total(count(SN, '', '24h', '24h')), 0),\n    sur('alertes Snort priorité 1', () => total(count(SN, ' |= \"[Priority: 1]\"', '24h')), 0),\n    sur('historique 48 h', () => total(count(FL, '', '1h', '47h')), 0),\n    sur('historique 72 h', () => total(count(FL, '', '1h', '71h')), 0),\n    sur('top IP sources (topk ' + SEUIL.maxIp + ')', () => top('topk(' + SEUIL.maxIp + ', sum by (src) (count_over_time(' + FL + WANBLK + RE_SYN + ' | src!=\"\" [24h])))', 'src'), []),\n    sur('lignes SYN 24 h (ports)', () => lignesSyn(), { parPort: {}, portsIp: {}, nb: 0 }),\n    sur('top signatures Snort', () => top('topk(10, sum by (msg) (count_over_time(' + SN + RE_SNORT + ' | msg!=\"\" [24h])))', 'msg'), []),\n    sur('signatures Snort des 7 jours', () => top('sum by (msg) (count_over_time(' + SN + RE_SNORT + ' | msg!=\"\" [7d] offset 24h))', 'msg'), []),\n    sur('top sources Snort', () => top('topk(5, sum by (src) (count_over_time(' + SN + RE_SNORT + ' | src!=\"\" [24h])))', 'src'), []),\n    sur('alertes Snort par hôte', () => rows('topk(6, sum by (src, msg) (count_over_time(' + SN + RE_SNORT + ' | src!=\"\" | msg!=\"\" [24h])))', ['src', 'msg']), []),\n    sur('blocages par règle', () => top('topk(6, sum by (tracker) (count_over_time(' + FL + WANBLK + RE_TRACKER + ' [24h])))', 'tracker'), []),\n    sur('blocages par interface', () => top('topk(5, sum by (iface) (count_over_time(' + FL + RE_IFACE + ' | action=\"block\" [24h])))', 'iface'), []),\n    sur('flux Snort (source, destination)', () => rows('topk(100, sum by (src, dst, msg) (count_over_time(' + SN + RE_SNORT_FLUX + ' | src!=\"\" | dst!=\"\" | msg!=\"\" [24h])))', ['src', 'dst', 'msg']), []),\n  ]);\n\n  const ports = Object.keys(syn.parPort).map((p) => ({ dport: p, n: syn.parPort[p] })).sort((a, b) => b.n - a.n).slice(0, 5);\n  const deuxJours = histo48 > 0;\n  const troisJours = histo72 > 0;\n  const vues = new Set(sigsSeen.map((x) => x.msg));\n  const topSignatures = sigs.slice(0, 6).map((x) => ({\n    signature: x.msg.slice(0, 90),\n    n: x.n,\n    nouvelle: troisJours && !vues.has(x.msg),\n  }));\n  const nouvelles = sigs\n    .filter((x) => troisJours && !vues.has(x.msg))\n    .map((x) => x.msg.slice(0, 90));\n\n  // Chaque nouvelle signature avec SES flux : source, destination et sens (faits calculés ici, jamais devinés par l'IA)\n  const nouvellesDetail = sigs\n    .filter((x) => troisJours && !vues.has(x.msg))\n    .map((x) => {\n      const f = flux.filter((y) => y.msg === x.msg).slice(0, 4)\n        .map((y) => ({ source: y.src, destination: y.dst, sens: sensDe(y.src, y.dst), n: y.n }));\n      const sens = Array.from(new Set(f.map((y) => y.sens.split(' :')[0])));\n      return { signature: x.msg.slice(0, 90), n: x.n, sens: sens.length ? sens.join(', ') : 'inconnu', flux: f };\n    });\n\n  // Détails des IP externes les plus actives : nombre de ports différents, déjà vues avant ?\n  const portsParIp = {};\n  const avantParIp = {};\n  if (scanners.length) {\n    const motifIp = scanners.map((x) => x.src.replace(/\\./g, '[.]')).join('|');\n    const filtre = ' | src=~`' + motifIp + '`';\n    const [pd, av] = await Promise.all([\n      Promise.resolve([]),\n      sur('historique des IP sur 7 jours', () => top('sum by (src) (count_over_time(' + FL + WANBLK + RE_SYN + ' | src!=\"\"' + filtre + ' [7d] offset 24h))', 'src'), []),\n    ]);\n    scanners.forEach((x) => { if (syn.portsIp[x.src]) portsParIp[x.src] = syn.portsIp[x.src].size; });\n    av.forEach((x) => { avantParIp[x.src] = x.n; });\n  }\n  const scan = scanners.map((x) => {\n    const nPorts = portsParIp[x.src] || 0;\n    const nAvant = avantParIp[x.src] || 0;\n    const motifs = [];\n    if (nPorts >= SEUIL.portsScanner) motifs.push(nPorts + ' ports différents');\n    if (nAvant > 0 && x.n >= SEUIL.recurrenteMin) motifs.push('déjà vue les jours précédents (' + nAvant + ' tentatives)');\n    if (x.n >= SEUIL.tentativesScanner) motifs.push(x.n + ' tentatives');\n    return { ip: x.src, n: x.n, ports_distincts: nPorts, motifs };\n  });\n  const surveiller = scan.filter((x) => x.motifs.length);\n\n  // Réputation AbuseIPDB des IP à surveiller (5 requêtes à la fois)\n  const reputationActive = !!ABUSEIPDB_KEY;\n  const reput = {};\n  if (reputationActive) {\n    for (let i = 0; i < surveiller.length; i += 5) {\n      await Promise.all(surveiller.slice(i, i + 5).map(async (x) => {\n        try {\n          reput[x.ip] = await abuse(x.ip);\n        } catch (e) {\n          reput[x.ip] = { erreur: String(e && e.message ? e.message : e).slice(0, 60) };\n        }\n      }));\n    }\n  }\n  const scoreDe = (x) => {\n    const r = reput[x.ip];\n    return r && typeof r.score === 'number' && !isNaN(r.score) ? r.score : -1;\n  };\n  const classees = surveiller.slice().sort((a, b) => scoreDe(b) - scoreDe(a) || b.ports_distincts - a.ports_distincts || b.n - a.n);\n  const suspectes = classees.filter((x) => scoreDe(x) >= SEUIL.scoreSuspect);\n  const erreursRep = Object.values(reput).filter((r) => r.erreur).length;\n  const reputationVerifiee = reputationActive && (surveiller.length === 0 || erreursRep < surveiller.length);\n  // Liste de blocage : score élevé (si AbuseIPDB a répondu), OU beaucoup de tentatives, OU beaucoup de ports\n  const abloquer = classees.filter((x) => {\n    const raisons = [];\n    if (reputationVerifiee && scoreDe(x) >= SEUIL.scoreBloquer) raisons.push('score ' + scoreDe(x));\n    if (SEUIL.tentativesBloquer > 0 && x.n >= SEUIL.tentativesBloquer) raisons.push(x.n + ' tentatives');\n    if (SEUIL.portsBloquer > 0 && x.ports_distincts >= SEUIL.portsBloquer) raisons.push(x.ports_distincts + ' ports');\n    const dom = (reput[x.ip] && reput[x.ip].domaine) || '';\n    if (raisons.length) raisonsBlocage[x.ip] = raisons.join(', ') + (dom ? ' - ' + dom : '');\n    return raisons.length > 0;\n  }).map((x) => x.ip);\n  const ipsVues = classees.slice(0, 6).map((x) => {\n    const r = reput[x.ip] || {};\n    return {\n      ip: x.ip,\n      tentatives: x.n,\n      ports: x.ports_distincts,\n      score_abuse: scoreDe(x) >= 0 ? scoreDe(x) : null,\n      pays: r.pays || null,\n      fournisseur: r.fai || null,\n      domaine: r.domaine || null,\n      type: r.type || null,\n      rapports: typeof r.rapports === 'number' ? r.rapports : null,\n    };\n  });\n\n  // Liste de blocage pfSense : ajout des IP à score élevé, regroupement en réseaux\n  let listeBlocage;\n  try {\n    listeBlocage = await majListeBlocage(abloquer);\n  } catch (e) {\n    listeBlocage = { mode: BLOCAGE.mode, alias: BLOCAGE.alias, etat: 'erreur', erreur: String(e && e.message ? e.message : e).slice(0, 520) };\n  }\n\n  const hotes = paires.map((x) => ({ ip: x.src, origine: origineDe(x.src), signature: x.msg.slice(0, 70), n: x.n }));\n  const repetes = hotes.filter((x) => x.n >= SEUIL.snortRepet);\n\n  // Raisons envoyées à « Préparer systèmes » (toutes de niveau warn)\n  const alertes = [];\n  const al = (texte) => alertes.push({ niveau: 'warn', texte });\n  if (echecs.length) al('Requêtes Loki en échec (' + echecs.length + ') : ' + echecs.slice(0, 3).join(' || '));\n  if (fl1h === 0) al('Aucun log du pare-feu reçu dans Loki depuis 1 h : envoi syslog interrompu ?');\n  if (deuxJours && !echecs.length) {\n    if (wan24 >= SEUIL.minBlocages && wan24 > SEUIL.hausse * wanPrev) {\n      al('Blocages WAN en forte hausse : ' + wan24 + ' contre ' + wanPrev + ' les 24 h précédentes');\n    }\n    if (syn24 >= SEUIL.minSyn && syn24 > SEUIL.hausse * synPrev) {\n      al('Scans TCP SYN en forte hausse : ' + syn24 + ' contre ' + synPrev + ' les 24 h précédentes');\n    }\n    if (snort24 === 0 && snortPrev > 0) {\n      al(\"Aucune alerte Snort reçue dans Loki ces 24 h alors qu'il y en avait les 24 h précédentes : vérifier l'envoi syslog de Snort\");\n    }\n  }\n  if (nouvelles.length) {\n    al(nouvelles.length + ' signature(s) Snort jamais vue(s) ces 7 derniers jours : ' + nouvellesDetail.slice(0, 3).map((x) => {\n      const f = x.flux[0];\n      return x.signature + ' (' + (f ? f.sens.split(' :')[0] + ', ' + f.source + ' vers ' + f.destination : 'source inconnue') + ')';\n    }).join(' | '));\n  }\n  if (surveiller.length) {\n    const t = classees.slice(0, 3).map((x) =>\n      x.ip + ' (' + (scoreDe(x) >= 0 ? 'score AbuseIPDB ' + scoreDe(x) + ', ' : '') + x.ports_distincts + ' ports)').join('; ');\n    al(surveiller.length + ' IP externe(s) à surveiller' +\n      (reputationVerifiee ? ', dont ' + suspectes.length + ' avec un score AbuseIPDB de ' + SEUIL.scoreSuspect + ' ou plus' : '') +\n      ' : ' + t);\n  }\n  if (listeBlocage.etat === 'a_mettre_a_jour') {\n    al('Liste de blocage pfSense (mode simulation, rien n\\'est écrit) : ' + (listeBlocage.nb_ips_ajoutees || 0) + ' IP à ajouter et ' +\n      (listeBlocage.regroupements || []).length + ' regroupement(s) en réseau proposés');\n  }\n  if (listeBlocage.etat === 'mise_a_jour') {\n    al('Liste de blocage pfSense mise à jour automatiquement : ' + (listeBlocage.nb_ips_ajoutees || 0) + ' IP ajoutée(s) (' +\n      (listeBlocage.ips_ajoutees || []).join(', ') + '), ' + (listeBlocage.regroupements || []).length + ' regroupement(s) en réseau, ' +\n      listeBlocage.entrees_avant + ' entrées avant et ' + listeBlocage.entrees_apres + ' après');\n  }\n  if (listeBlocage.etat === 'erreur') {\n    al('Liste de blocage pfSense : mise à jour impossible : ' + listeBlocage.erreur);\n  }\n  if (repetes.length) {\n    al('Alertes Snort répétées depuis un même hôte : ' + repetes.slice(0, 3).map((x) => x.ip + ' : ' + x.signature.slice(0, 60) + ' (' + x.n + ' fois)').join('; '));\n  }\n\n  return [{\n    json: {\n      periode: '24 dernières heures',\n      comparaison_possible: deuxJours,\n      note: deuxJours ? undefined : \"Loki n'a pas encore 2 jours de données : pas de comparaison avec la veille\",\n      resume_chiffres: wan24 + ' blocages WAN, ' + syn24 + ' scans SYN et ' + snort24 + ' alertes Snort sur 24 h',\n      logs_pare_feu_derniere_heure: fl1h,\n      requetes_en_echec: echecs,\n      wan: {\n        blocages: wan24,\n        blocages_24h_precedentes: wanPrev,\n        scans_syn: syn24,\n        scans_syn_24h_precedentes: synPrev,\n        blocages_par_regle: regles.map((x) => ({ regle: nomRegle(x.tracker), n: x.n })),\n        nb_ips_a_surveiller: surveiller.length,\n        nb_ips_score_50_plus: suspectes.length,\n        reputation_verifiee: reputationVerifiee,\n        ips_a_surveiller: ipsVues,\n        top_ports: ports.map((x) => ({ port: x.dport, n: x.n })),\n      },\n      liste_blocage: listeBlocage,\n      snort: {\n        alertes: snort24,\n        alertes_24h_precedentes: snortPrev,\n        priorite1: snortP1,\n        top_signatures: topSignatures,\n        nouvelles_signatures: nouvelles,\n        nouvelles_signatures_detail: nouvellesDetail,\n        alertes_par_hote: hotes,\n        top_sources: snortSrc.map((x) => ({ ip: x.src, origine: origineDe(x.src), n: x.n })),\n      },\n      blocages_par_interface: ifaces.map((x) => ({ interface: x.iface, n: x.n })),\n      alertes,\n    },\n  }];\n} catch (e) {\n  return [{ json: { error: 'Loki injoignable ou requête invalide : ' + e.message } }];\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1456,
+        -192
+      ],
+      "id": "87d8ba2b-aa92-486c-aa37-eeab8706b901",
+      "name": "check_pfsense_logs"
+    },
+    {
+      "parameters": {
+        "jsCode": "// check_loki_updates : versions installées de Grafana et de Loki (CT 110) comparées aux dernières versions publiées sur GitHub\nconst GRAFANA = 'http://IP_PRIVEE_12:PORT_10';\nconst LOKI = 'http://IP_PRIVEE_12:PORT_9';\nconst RECENT_JOURS = 14;\n\nconst get = async (url, extra) =>\n  this.helpers.httpRequest(Object.assign({ method: 'GET', url: url, timeout: 30000 }, extra || {}));\n\nconst parse = (s) => {\n  const m = String(s || '').trim().replace(/^v/, '').match(/^(\\d+)\\.(\\d+)\\.(\\d+)$/);\n  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;\n};\nconst cmp = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];\n\nconst versionGrafana = async () => {\n  const r = await get(GRAFANA + '/api/health', { json: true });\n  const o = typeof r === 'string' ? JSON.parse(r) : r;\n  if (!o || !o.version) throw new Error('réponse inattendue de Grafana');\n  return String(o.version);\n};\n\nconst versionLoki = async () => {\n  try {\n    const r = await get(LOKI + '/loki/api/v1/status/buildinfo', { json: true });\n    const o = typeof r === 'string' ? JSON.parse(r) : r;\n    if (o && o.version) return String(o.version);\n  } catch (e) {\n    // on essaie les métriques ci-dessous\n  }\n  const t = await get(LOKI + '/metrics');\n  const m = String(t).match(/loki_build_info\\{[^}]*version=\"([^\"]+)\"/);\n  if (!m) throw new Error('version de Loki illisible');\n  return m[1];\n};\n\nconst publiees = async (depot) => {\n  const r = await get('https://api.github.com/repos/' + depot + '/releases', {\n    qs: { per_page: 100 },\n    headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'n8n-check-updates' },\n    json: true,\n  });\n  const liste = typeof r === 'string' ? JSON.parse(r) : r;\n  if (!Array.isArray(liste)) throw new Error('réponse inattendue de GitHub');\n  return liste\n    .filter((x) => !x.prerelease && !x.draft && parse(x.tag_name))\n    .map((x) => ({ v: parse(x.tag_name), tag: String(x.tag_name).replace(/^v/, ''), date: x.published_at }));\n};\n\nconst evaluer = async (nom, depot, lireVersion) => {\n  try {\n    const installee = await lireVersion();\n    const ins = parse(installee);\n    if (!ins) throw new Error('version installée illisible : ' + installee);\n    const rel = await publiees(depot);\n    const memeMajeure = rel.filter((x) => x.v[0] === ins[0] && cmp(x.v, ins) > 0).sort((a, b) => cmp(b.v, a.v));\n    const majeures = rel.filter((x) => x.v[0] > ins[0]).sort((a, b) => cmp(b.v, a.v));\n    const meilleure = memeMajeure[0] || null;\n    const majeure = majeures[0] || null;\n    const type = meilleure ? (meilleure.v[1] === ins[1] ? 'correctif' : 'mineure') : null;\n    const age = meilleure ? Math.floor((Date.now() - Date.parse(meilleure.date)) / 86400000) : null;\n    return {\n      nom: nom,\n      installee: installee,\n      derniere: meilleure ? meilleure.tag : installee,\n      type: type,\n      publiee: meilleure ? String(meilleure.date).slice(0, 10) : null,\n      recente: meilleure ? age < RECENT_JOURS : false,\n      majeure: majeure ? majeure.tag : null,\n    };\n  } catch (e) {\n    return { nom: nom, erreur: String(e && e.message ? e.message : e) };\n  }\n};\n\nlet donnees;\ntry {\n  const produits = await Promise.all([\n    evaluer('Grafana', 'grafana/grafana', versionGrafana),\n    evaluer('Loki', 'grafana/loki', versionLoki),\n  ]);\n  donnees = { ok: true, checked: new Date().toISOString(), produits: produits };\n} catch (e) {\n  donnees = { error: 'Vérification des versions impossible : ' + String(e && e.message ? e.message : e) };\n}\n\n// On renvoie une copie JSON simple pour que n8n accepte le résultat à coup sûr\nconst propre = JSON.parse(JSON.stringify(donnees));\nreturn [{ json: propre }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1232,
+        32
+      ],
+      "id": "2f67c988-7491-41eb-ae26-173f4b1ad621",
+      "name": "check_loki_updates"
+    },
+    {
+      "parameters": {
+        "jsCode": "// check_unifi_apps_updates : v2026.11.11-1 : ajout du firmware UniFi OS des consoles (CloudKey+ et UNVR)\n// check_unifi_apps_updates\n// Lit directement sur chaque console UniFi (CloudKey+ et UNVR) :\n//  - les applications installées et la mise à jour annoncée (champ updateAvailable de /api/apps)\n//  - la version UniFi OS installée (/api/system, avec la session du compte local)\n// Compare UniFi OS à la dernière version publiée par Ubiquiti (fw-update.ubnt.com, canal release).\n// Connexion par compte local (pas de clé API : la console la refuse pour cette adresse).\n// Sortie : 1 item { produits: [ { nom, console, installe, derniere, majDisponible, derniereInconnue, erreur } ] }\n\nconst CONSOLES = [\n  { nom: 'CloudKey+', url: 'https://IP_PRIVEE_3',  utilisateur: 'n8n-lecture', motDePasse: 'A_REMPLIR', produitFw: 'unifi-cloudkey', plateforme: 'UCKP' },\n  // UNVR (Protect et Access) : laisser COLLER_... dans le mot de passe pour ignorer cette console\n  { nom: 'UNVR',      url: 'https://IP_PRIVEE_13', utilisateur: 'n8n-lecture', motDePasse: 'A_REMPLIR', produitFw: 'unifi-nvr',      plateforme: 'UNVR' },\n];\n\n// \"network\" -> \"Network\"\nconst majuscule = s => String(s || '').charAt(0).toUpperCase() + String(s || '').slice(1);\n\n// Parcourt la réponse et garde chaque objet qui a une version et un champ updateAvailable\nfunction trouverApps(o, res) {\n  if (Array.isArray(o)) { o.forEach(x => trouverApps(x, res)); return res; }\n  if (o && typeof o === 'object') {\n    if ('updateAvailable' in o && typeof o.version === 'string') {\n      const nom = o.name || o.type || o.displayName || o.id;\n      if (nom && o.isInstalled !== false && !res.some(r => r.nom.toLowerCase() === String(nom).toLowerCase())) {\n        res.push({ nom: majuscule(nom), version: o.version, maj: o.updateAvailable });\n      }\n    }\n    Object.values(o).forEach(v => trouverApps(v, res));\n  }\n  return res;\n}\n\n// \"v6.0.17+701d2b2\" -> [6, 0, 17] ; null si aucun numéro trouvé\nfunction numeros(v) {\n  const m = String(v || '').match(/(\\d+)\\.(\\d+)\\.(\\d+)/);\n  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;\n}\n// \"v6.0.17+701d2b2\" -> \"6.0.17\"\nconst versionCourte = v => { const n = numeros(v); return n ? n.join('.') : String(v || ''); };\n// true si a est plus récente que b\nfunction plusRecente(a, b) {\n  for (let i = 0; i < 3; i++) { if (a[i] !== b[i]) return a[i] > b[i]; }\n  return false;\n}\n\n// Cherche dans /api/system un champ de version du firmware (priorité aux clés qui contiennent \"firmware\", puis au chemin le plus court)\nfunction trouverVersionFirmware(o) {\n  const candidats = [];\n  (function parcours(x, chemin) {\n    if (Array.isArray(x)) { x.forEach((y, i) => parcours(y, chemin + '[' + i + ']')); return; }\n    if (x && typeof x === 'object') {\n      for (const [k, v] of Object.entries(x)) {\n        const p = chemin ? chemin + '.' + k : k;\n        if (typeof v === 'string' && /^v?\\d+\\.\\d+\\.\\d+/.test(v) && /firmware|version/i.test(k)) candidats.push({ chemin: p, cle: k, valeur: v });\n        else if (v && typeof v === 'object') parcours(v, p);\n      }\n    }\n  })(o, '');\n  candidats.sort((a, b) =>\n    (Number(/firmware/i.test(b.cle)) - Number(/firmware/i.test(a.cle))) ||\n    (a.chemin.split('.').length - b.chemin.split('.').length));\n  return candidats[0] || null;\n}\n\n// Cherche dans la réponse du serveur Ubiquiti la première entrée de la bonne plateforme\nfunction trouverDernierFirmware(o, plateforme) {\n  if (Array.isArray(o)) { for (const x of o) { const r = trouverDernierFirmware(x, plateforme); if (r) return r; } return null; }\n  if (o && typeof o === 'object') {\n    if (typeof o.version === 'string' && o.platform === plateforme) return o;\n    for (const v of Object.values(o)) { const r = trouverDernierFirmware(v, plateforme); if (r) return r; }\n  }\n  return null;\n}\n\nconst produits = [];\n\nfor (const c of CONSOLES) {\n  if (!c.motDePasse || c.motDePasse.startsWith('COLLER_')) continue; // console non configurée : ignorée\n\n  // 1) Connexion\n  let entetes;\n  try {\n    const login = await this.helpers.httpRequest({\n      method: 'POST',\n      url: c.url + '/api/auth/login',\n      body: { username: c.utilisateur, password: c.motDePasse, rememberMe: false },\n      json: true,\n      skipSslCertificateValidation: true,\n      returnFullResponse: true,\n    });\n    const cookies = [].concat(login.headers['set-cookie'] || []).map(x => x.split(';')[0]).join('; ');\n    const csrf = login.headers['x-csrf-token'] || login.headers['x-updated-csrf-token'] || '';\n    entetes = { Cookie: cookies, 'X-CSRF-Token': csrf, Accept: 'application/json' };\n  } catch (e) {\n    produits.push({ nom: c.nom + ' (connexion)', console: c.nom, installe: null, derniere: null, majDisponible: false, derniereInconnue: true,\n      erreur: 'Connexion au compte local impossible : ' + String(e.message).slice(0, 120) });\n    continue;\n  }\n\n  // 2) Applications et mises à jour annoncées\n  try {\n    const r = await this.helpers.httpRequest({\n      method: 'GET',\n      url: c.url + '/api/apps',\n      headers: entetes,\n      skipSslCertificateValidation: true,\n      json: true,\n    });\n    const apps = trouverApps(r, []);\n    if (!apps.length) {\n      produits.push({ nom: c.nom + ' (applications)', console: c.nom, installe: null, derniere: null, majDisponible: false, derniereInconnue: true,\n        erreur: 'Aucune application trouvée dans /api/apps : ' + JSON.stringify(r).slice(0, 150) });\n    }\n    for (const a of apps) {\n      const nouvelle = a.maj && typeof a.maj === 'string' && a.maj !== a.version ? a.maj : null;\n      produits.push({\n        nom: a.nom,\n        console: c.nom,\n        installe: a.version,\n        derniere: nouvelle || a.version,\n        majDisponible: !!nouvelle,\n        derniereInconnue: false,\n        erreur: null,\n      });\n    }\n  } catch (e) {\n    produits.push({ nom: c.nom + ' (applications)', console: c.nom, installe: null, derniere: null, majDisponible: false, derniereInconnue: true,\n      erreur: 'Lecture de /api/apps impossible : ' + String(e.message).slice(0, 120) });\n  }\n\n  // 3) Version UniFi OS installée (avec la session ouverte)\n  let osInstalle = null, osSource = null, osErreur = null;\n  try {\n    const s = await this.helpers.httpRequest({\n      method: 'GET',\n      url: c.url + '/api/system',\n      headers: entetes,\n      skipSslCertificateValidation: true,\n      json: true,\n    });\n    const v = trouverVersionFirmware(s);\n    if (v) { osInstalle = v.valeur; osSource = '/api/system → ' + v.chemin; }\n    else osErreur = 'Version UniFi OS introuvable dans /api/system. Champs reçus : ' + Object.keys(s || {}).join(', ').slice(0, 200);\n  } catch (e) {\n    osErreur = 'Lecture de /api/system impossible : ' + String(e.message).slice(0, 120);\n  }\n\n  // 4) Déconnexion\n  try {\n    await this.helpers.httpRequest({ method: 'POST', url: c.url + '/api/auth/logout', headers: entetes, skipSslCertificateValidation: true });\n  } catch (e) {}\n\n  // 5) Dernière version UniFi OS publiée par Ubiquiti (canal release)\n  let osDerniere = null;\n  if (!osErreur) {\n    try {\n      const cat = await this.helpers.httpRequest({\n        method: 'GET',\n        url: 'https://fw-update.ubnt.com/api/firmware?filter=eq~~product~~' + c.produitFw +\n             '&filter=eq~~channel~~release&filter=eq~~platform~~' + c.plateforme + '&sort=-version&limit=1',\n        json: true,\n      });\n      const f = trouverDernierFirmware(cat, c.plateforme);\n      if (f) osDerniere = f.version;\n      else osErreur = 'Aucune version ' + c.plateforme + ' trouvée sur fw-update.ubnt.com';\n    } catch (e) {\n      osErreur = 'Lecture de fw-update.ubnt.com impossible : ' + String(e.message).slice(0, 120);\n    }\n  }\n\n  // 6) Comparaison\n  const nInst = numeros(osInstalle), nDern = numeros(osDerniere);\n  if (!osErreur && (!nInst || !nDern)) osErreur = 'Version illisible (installée : ' + osInstalle + ', publiée : ' + osDerniere + ')';\n  const majOs = !osErreur && plusRecente(nDern, nInst);\n  produits.push({\n    nom: 'UniFi OS ' + c.nom,\n    console: c.nom,\n    installe: osInstalle ? versionCourte(osInstalle) : null,\n    derniere: osDerniere ? versionCourte(osDerniere) : null,\n    majDisponible: majOs,\n    derniereInconnue: !!osErreur,\n    erreur: osErreur,\n    source: osSource,\n  });\n}\n\nreturn [{ json: { produits } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        496,
+        0
+      ],
+      "id": "5d05c793-91a6-4cac-9bb0-a12fcd9ea9bf",
+      "name": "check_unifi_apps_updates"
+    },
+    {
+      "parameters": {
+        "url": "http://IP_PRIVEE_4:PORT_8/sante-truenas.json",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        256,
+        240
+      ],
+      "id": "233ab571-b2d5-4b69-aefa-981f735d8554",
+      "name": "check_truenas_sante",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "http://IP_PRIVEE_5:PORT_6/synology-sante.json",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        512,
+        240
+      ],
+      "id": "319c67d2-9c21-4f44-b587-f46a12ca013e",
+      "name": "check_synology_sante",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "https://IP_PRIVEE_9:PORT_5/api2/json/nodes/proxmox1/tasks?typefilter=vzdump&limit=50 ",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "A_REMPLIR"
+            }
+          ]
+        },
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        752,
+        240
+      ],
+      "id": "84ea2aa3-cd9f-425b-b7a2-eb3c80eb7b4b",
+      "name": "check_proxmox1_backups",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "https://IP_PRIVEE_10:PORT_5/api2/json/nodes/proxmox2/tasks?typefilter=vzdump&limit=50",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "A_REMPLIR"
+            }
+          ]
+        },
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1008,
+        240
+      ],
+      "id": "aabcd465-ce53-43b7-86fc-8c11c4ceb828",
+      "name": "check_proxmox2_backups",
+      "executeOnce": false,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "https://IP_PRIVEE_9:PORT_5/api2/json/nodes/proxmox1/disks/list",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "A_REMPLIR"
+            }
+          ]
+        },
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1264,
+        240
+      ],
+      "id": "e01932ce-7e22-490a-8bde-de9398989c38",
+      "name": "check_proxmox1_disques",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "https://IP_PRIVEE_10:PORT_5/api2/json/nodes/proxmox2/disks/list",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "A_REMPLIR"
+            }
+          ]
+        },
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1520,
+        240
+      ],
+      "id": "c00e21b1-dbcd-4849-b805-0f037690e09b",
+      "name": "check_proxmox2_disques",
+      "executeOnce": false,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://IP_PRIVEE_14:PORT_11/api/chat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ /* Body Ollama : v2026.11.17-7 : Uptime Kuma, NordVPN (tunnel) à la place de NordVPN Server ; v2026.11.17-3 : Snort selon le sens réel du trafic ; Proxmox : risque = sauvegarde, pve-qemu-kvm ; Kuma : panne terminée sans vérification de matériel */ JSON.stringify({\n  model: \"ministral-3:latest\",\n  stream: false,\n  options: { temperature: 0, num_ctx: 16384, num_predict: 2048 },\n  format: {\n    type: \"object\",\n    properties: {\n      status: { type: \"string\", enum: [\"ok\", \"warn\", \"crit\"] },\n      detail: { type: \"string\" },\n      suggestion: { type: \"string\" },\n      causes: { type: \"array\", items: { type: \"string\" } },\n      verifications: {\n        type: \"array\",\n        items: {\n          type: \"object\",\n          properties: {\n            etape: { type: \"string\" },\n            ou: { type: \"string\" },\n            commande: { type: \"string\" },\n            normal: { type: \"string\" },\n            sinon: { type: \"string\" }\n          },\n          required: [\"etape\", \"ou\", \"commande\", \"normal\", \"sinon\"]\n        }\n      },\n      correction: {\n        type: \"object\",\n        properties: {\n          description: { type: \"string\" },\n          commande: { type: \"string\" },\n          risque: { type: \"string\" }\n        },\n        required: [\"description\", \"commande\", \"risque\"]\n      },\n      a_rapporter: { type: \"string\" }\n    },\n    required: [\"status\", \"detail\", \"suggestion\", \"causes\", \"verifications\", \"correction\", \"a_rapporter\"]\n  },\n  messages: [\n    { role: \"system\", content: [\n      \"Tu rédiges l'état d'un système d'un homelab à partir de ses données réelles, et tu proposes un diagnostic quand il y a un problème. Réponds en français.\",\n      \"Contexte : réseau pfSense avec VLAN10, VLAN20 et VLAN40. Les machines Linux se gèrent par SSH. Serveur Ollama : IP_PRIVEE_1. Home Assistant : IP_PRIVEE_2. Zigbee2MQTT : IP_PRIVEE_3.\",\n      \"Les pourcentages sont des taux d'occupation : 0,8 signifie 0,8 % et non 80 %. Pour un disque, un pourcentage veut dire la part occupée : écris « occupé » ou « d'occupation », jamais « libre ».\",\n      \"Si un statut est imposé, reprends-le tel quel dans status et rédige detail et suggestion de façon cohérente avec les raisons indiquées. Sinon, choisis : crit si erreur d'appel ou service injoignable, warn si alerte en cours ou mise à jour disponible, sinon ok.\",\n      \"detail : une phrase courte qui cite au moins une valeur chiffrée tirée des données. Ne fais aucun calcul : cite seulement les valeurs déjà présentes dans les données, avec leur unité exacte. N'écris jamais « sous charge » sauf si le processeur ou la mémoire dépasse 70 %. Mentionne en priorité le processeur, la mémoire et le disque le plus rempli quand ils sont présents.\",\n      \"Si le statut final est ok : suggestion = chaîne vide, causes = tableau vide, verifications = tableau vide, correction = trois chaînes vides, a_rapporter = chaîne vide.\",\n      \"Même quand le statut est ok, detail n'est jamais vide : écris toujours une phrase courte avec au moins une valeur chiffrée tirée des données. Seuls suggestion, causes, verifications, correction et a_rapporter sont vides quand le statut est ok.\",\n      \"Si une raison indique qu'une source de données est absente, la cause est dans le workflow n8n : le nœud n'existe pas, n'est pas relié à la chaîne ou porte un autre nom. Les vérifications se font dans n8n, workflow Verifier system : le nom exact du nœud, puis son lien avec le nœud précédent. N'écris aucune commande dans ce cas.\",\n      \"Ne calcule jamais un temps écoulé et n'écris jamais « il y a » avec une date. Pour l'âge de données, utilise age_des_donnees_en_heures quand il est présent (0 veut dire moins d'une heure), sinon recopie la date et l'heure telles quelles.\",\n      \"Si le statut final est warn ou crit : suggestion = une phrase qui résume l'action principale. causes = 2 à 4 causes probables, de la plus simple à la plus rare. verifications = 2 à 4 étapes qui ne modifient RIEN, de la plus simple à la plus complexe. Chaque étape contient : etape (ce qu'on vérifie), ou (machine ou interface où le faire), commande (commande complète et copiable telle quelle, ou chaîne vide si la vérification se fait dans une interface), normal (le résultat attendu si tout va bien), sinon (ce que cela signifie si le résultat est différent).\",\n      \"Pour un appareil hors ligne ou injoignable, l'ordre des vérifications est : est-il allumé et alimenté (prise, PoE, voyants), puis le réseau (ping, câble, port du switch, adresse IP), puis le service lui-même (systemctl status, journalctl). Exception : un moniteur Uptime Kuma marqué distant n'est pas un appareil de la maison ; applique alors la règle « Uptime Kuma, moniteurs hors ligne ».\",\n      \"N'invente jamais une commande. Si tu n'es pas sûr qu'elle existe, décris la vérification à faire dans l'interface concernée (Unifi, pfSense, Proxmox, TrueNAS, Synology, Home Assistant) et laisse commande vide.\",\n      \"correction : seulement si une action modifie quelque chose (redémarrage, mise à jour, changement de configuration). Donne la description, la commande et le risque. Sinon, trois chaînes vides.\",\n      \"Cas particulier mise à jour disponible (cette règle prime sur les règles des causes, des vérifications et de a_rapporter ci-dessus) : causes = tableau vide, verifications = tableau vide, a_rapporter = chaîne vide. suggestion = une seule phrase courte. correction.description = les étapes à suivre dans l'interface, avec le chemin des menus. correction.commande = chaîne vide. correction.risque = rappeler de faire une sauvegarde avant la mise à jour. Ne donne aucun conseil sur le moment de la journée où faire la mise à jour, n'écris pas qu'un paquet est critique, et n'utilise que des termes propres au système concerné. Pour n8n, Immich, Grafana, Loki et Ollama, correction.description suit uniquement le paragraphe propre à ce système, et les étapes de l'un ne se mélangent jamais avec celles d'un autre.\",\n      \"Home Assistant : ne propose jamais de commande SSH ni systemctl. Tout se fait dans l'interface (Paramètres, Système, Mises à jour ou Journaux, ou HACS pour les composants personnalisés). Laisse commande vide.\",\n      \"TrueNAS : pour une mise à jour d'app, les étapes sont dans l'interface TrueNAS : Apps, puis Installed, puis le bouton Update de l'app concernée. Ne propose aucune commande.\",\n      \"Synology : pour une mise à jour de DSM, les étapes sont dans l'interface DSM : Panneau de configuration, puis Mise à jour et restauration. Pour un paquet : Centre de paquets, puis les mises à jour disponibles. Ne propose aucune commande.\",\n      \"Proxmox : pour une mise à jour de paquets, les étapes sont dans l'interface Proxmox : choisir le nœud, puis Updates, puis Refresh, puis Upgrade. Après l'Upgrade, le nœud ne redémarre jamais tout seul. Si un noyau est mis à jour, dis qu'il faut redémarrer le nœud soi-même (bouton Reboot du nœud) et rappelle que ce redémarrage arrête ses machines virtuelles et conteneurs ; sinon écris qu'aucun redémarrage du nœud n'est nécessaire. Cette phrase sur le redémarrage va à la fin de correction.description, jamais dans correction.risque. correction.risque = toujours le rappel de sauvegarde : sauvegarder les machines virtuelles et conteneurs, ou faire un instantané, avant l'Upgrade ; Proxmox 1 et Proxmox 2 s'écrivent de la même façon. Si pve-qemu-kvm fait partie des paquets à mettre à jour, ajoute à correction.description : les machines virtuelles en marche gardent l'ancienne version de QEMU jusqu'à ce qu'on les arrête puis les redémarre (Shutdown puis Start, un redémarrage depuis l'intérieur de la VM ne suffit pas). Si detail annonce un nombre de paquets importants, nomme-les tous ou n'annonce pas de nombre. Ne propose aucune commande. Cette règle ne s'applique jamais à Grafana, Loki, n8n ni Immich.\",\n      \"n8n : n8n tourne dans le CT 102 sur proxmox1 (jamais sur proxmox2, jamais le CT 110). Il n'y a pas d'interface de mise à jour. La règle des 14 jours et la procédure de Grafana et Loki ne s'appliquent jamais à n8n : n'écris aucune phrase d'attente et ne parle pas de l'âge de la version. suggestion = une phrase : mettre n8n à jour vers la nouvelle version. Écris exactement ces étapes dans correction.description, en remplaçant ANCIENNE et NOUVELLE par les vraies versions indiquées dans les raisons : 1) dans le shell de proxmox1, remplacer l'instantané du CT 102 : `pct delsnapshot 102 avant-maj 2>/dev/null; pct snapshot 102 avant-maj` ; 2) dans la console du CT 102 (n8n), changer la version : `cd /root && sed -i 's|n8nio/n8n:ANCIENNE|n8nio/n8n:NOUVELLE|' /root/docker-compose.yml` ; 3) lancer `docker compose pull n8n` puis `docker compose up -d n8n` ; 4) vérifier la nouvelle version avec `docker exec root-n8n-1 n8n --version` ; 5) supprimer les anciennes images inutilisées avec `docker image prune -a -f`. correction.commande = chaîne vide. correction.risque = ne pas lancer la mise à jour pendant l'analyse de 4 h, car elle arrête n8n quelques secondes ; si la mise à jour est majeure, lire d'abord les notes de version.\",\n      \"Immich : Immich tourne en Docker sur le Synology (IP_PRIVEE_5), dans le dossier /volume1/docker/Immich, et sa version est dans la variable IMMICH_VERSION du fichier .env. Il n'y a ni instantané Proxmox ni interface de mise à jour, et la règle des 14 jours ne s'applique pas. suggestion = une phrase : mettre Immich à jour vers la nouvelle version. Écris exactement ces étapes dans correction.description, en remplaçant ANCIENNE par la version installée et NOUVELLE par la nouvelle version, toutes deux indiquées dans les raisons, sans la lettre v : 1) dans DSM, activer le service SSH (Panneau de configuration, Terminal et SNMP, Activer le service SSH) ; 2) depuis ton poste : `ssh -p PORT_SSH UTILISATEUR_1@IP_PRIVEE_5` ; 3) devenir root : `sudo -i` ; 4) aller dans le dossier : `cd /volume1/docker/Immich` ; 5) changer la version : `sed -i '/^IMMICH_VERSION=/s|ANCIENNE|NOUVELLE|' .env` ; 6) vérifier : `grep IMMICH_VERSION .env` ; 7) télécharger et relancer : `docker compose pull` puis `docker compose up -d` ; 8) supprimer les anciennes images inutilisées : `docker image prune -a -f` ; 9) vérifier la version dans Immich, puis désactiver le SSH dans DSM. correction.commande = chaîne vide. correction.risque = lire d'abord les notes de version d'Immich sur GitHub, car les changements incompatibles sont fréquents, et vérifier que la dernière sauvegarde Hyper Backup s'est bien terminée.\",\n      \"Grafana et Loki : ce sont deux conteneurs Docker du CT 110 sur proxmox2, dans le dossier /opt/loki-stack. Ce paragraphe ne s'applique qu'à Grafana et Loki, et la règle des 14 jours aussi. Ils ne se mettent jamais à jour par Proxmox Updates ni Upgrade, et tu ne remplaces jamais les commandes par un conseil du genre lire les notes de version. Même si la version est publiée depuis moins de 14 jours, correction.description contient toujours la procédure complète ci-dessous, pour qu'on puisse la copier plus tard. suggestion = une phrase : si la version est publiée depuis moins de 14 jours, attendre qu'elle ait au moins 14 jours ; sinon, mettre Grafana ou Loki à jour vers la nouvelle version. Recopie la procédure mot pour mot, en remplaçant ANCIENNE et NOUVELLE par les vraies versions indiquées dans les raisons, en supprimant l'étape du produit qui n'a pas de mise à jour, et en renumérotant. N'ajoute jamais d'étape pour revenir en arrière dans correction.description. Procédure : 1) dans le shell de proxmox2, remplacer l'instantané du CT 110 : `pct delsnapshot 110 avant-maj 2>/dev/null; pct snapshot 110 avant-maj` ; 2) toujours dans le shell de proxmox2, entrer dans le CT 110 (Loki) : `pct enter 110` ; 3) changer la version de Grafana : `cd /opt/loki-stack && sed -i 's|grafana/grafana:ANCIENNE|grafana/grafana:NOUVELLE|' docker-compose.yml` ; 4) changer la version de Loki : `cd /opt/loki-stack && sed -i 's|grafana/loki:ANCIENNE|grafana/loki:NOUVELLE|' docker-compose.yml` ; 5) lancer `docker compose pull` puis `docker compose up -d` ; 6) vérifier la version de Grafana avec `curl -s http://127.0.0.1:3000/api/health` ; 7) vérifier la version de Loki avec `curl -s http://127.0.0.1:3100/loki/api/v1/status/buildinfo` ; 8) supprimer les anciennes images inutilisées avec `docker image prune -a -f` ; 9) sortir du CT : `exit`. Si la version est publiée depuis moins de 14 jours, commence correction.description par la phrase : « À faire quand la version aura au moins 14 jours. ». correction.commande = chaîne vide. correction.risque = Loki ne reçoit plus les logs pendant quelques secondes au redémarrage ; pour une mise à jour mineure, lire d'abord les notes de version de Grafana ou de Loki. Note, en cas de problème seulement et jamais à la suite des autres commandes : dans le shell de proxmox2, revenir en arrière avec `pct stop 110; pct rollback 110 avant-maj && pct start 110`.\",\n      \"UniFi Apps : ce système regroupe les applications UniFi (Network sur le CloudKey+, Protect et Access sur l'UNVR) et UniFi OS, le système des consoles CloudKey+ et UNVR, mais pas le firmware des autres appareils. Cette règle prime sur toutes les autres règles, y compris le cas particulier mise à jour disponible. Si une mise à jour est disponible : detail = l'application avec sa version installée et sa nouvelle version ; suggestion = « Mettre à jour dans l'application UniFi : Paramètres, Mises à jour. » ; correction.description = « Dans l'application UniFi, Paramètres, Mises à jour : mettre à jour UniFi » suivi du nom de l'application (par exemple Network, Protect ou Access), ou « UniFi OS » suivi du nom de la console pour une mise à jour de UniFi OS ; correction.commande = chaîne vide ; correction.risque = chaîne vide ; causes = tableau vide ; verifications = tableau vide ; a_rapporter = chaîne vide. N'ajoute aucune autre étape. Si une raison indique qu'une version est impossible à lire : detail = recopie la raison ; suggestion = « Vérifier le compte local et son mot de passe dans le nœud n8n check_unifi_apps_updates. » ; causes = tableau vide ; verifications = tableau vide ; correction = trois chaînes vides ; a_rapporter = chaîne vide. Ne propose jamais de redémarrer quoi que ce soit, ni de recréer un compte ou une clé.\",\n      \"Sauvegardes : ce système regroupe les sauvegardes de Proxmox 1 et Proxmox 2 (tâches Backup/vzdump), de TrueNAS (instantanés, réplications, Cloud Sync, Rsync) et du Synology (Hyper Backup, qui sauvegarde le dossier docker et Immich vers TrueNAS). Si le statut est ok : detail = une phrase courte qui cite la date de la dernière sauvegarde réussie de Proxmox et de Hyper Backup. Si warn : detail = la raison la plus importante. causes = 2 maximum, choisies selon la raison : tâche désactivée ou supprimée, destination pleine ou injoignable (stockage NFS trunas-backup sur TrueNAS pour Proxmox, TrueNAS pour Hyper Backup), échec d'une seule VM ou d'un seul CT (VM éteinte, verrou, instantané impossible). verifications = 2 maximum, seulement dans l'interface concernée et sans commande : Proxmox = le nœud, Task History, double-cliquer sur la tâche Backup en échec pour lire son journal, puis Datacenter, Backup pour voir l'horaire et le stockage ; TrueNAS = Data Protection, la tâche concernée et son journal ; Synology = application Hyper Backup, la tâche, puis Journal. Si une source est absente, la cause est dans le workflow n8n (nœud absent ou non relié) : n'écris aucune commande. correction : si la cause est claire, description = relancer la tâche à la main (Proxmox : Datacenter, Backup, Run now ; TrueNAS : Data Protection, Run Now ; Synology : Hyper Backup, Sauvegarder maintenant) ; commande = chaîne vide ; risque = chaîne vide. a_rapporter = les dernières lignes du journal de la tâche en échec.\",\n      \"Disques : ce système regroupe la santé des disques de Proxmox 1, Proxmox 2, TrueNAS (pools ZFS et SMART) et Synology (Gestionnaire de stockage). Si le statut est ok : detail = une phrase courte, par exemple le nombre de disques et l'état des pools. Si une raison parle de SMART échoué, de pool dégradé, de pool non sain ou de volume anormal (statut crit) : suggestion = faire immédiatement une sauvegarde des données importantes, puis remplacer le disque en cause ; causes = disque en fin de vie, câble ou port SATA défectueux ; verifications = 1) l'état du disque dans l'interface (Proxmox : le nœud, Disks, colonne S.M.A.R.T., bouton Show S.M.A.R.T. values ; TrueNAS : Storage, le pool, Manage Devices, puis Storage, Disks ; Synology : Gestionnaire de stockage, HDD/SSD, Infos sur la santé) ; 2) le journal système de la machine pour des erreurs d'entrée/sortie ; correction.description = sauvegarder, puis remplacer le disque (TrueNAS : Storage, Manage Devices, Replace ; Synology : Gestionnaire de stockage, Réparer ; Proxmox : déplacer les VM vers un autre stockage avant le remplacement) ; correction.commande = chaîne vide ; correction.risque = ne jamais retirer un disque d'un pool sans redondance avant d'avoir copié ses données. Si une raison parle de secteurs réalloués, en attente ou illisibles, d'erreurs média ou d'usure élevée (statut warn) : suggestion = surveiller le disque chaque jour et prévoir son remplacement si le nombre augmente ; causes = usure normale, début de défaillance ; verifications = 1) même vérification dans l'interface, valeurs SMART du disque ; correction = trois chaînes vides. Si une raison parle de température : causes = ventilation du rack ou du boîtier, poussière ; verifications = la température du rack dans Home Assistant (sensor.temp_rack_server_temperature) ; correction = trois chaînes vides. Si une raison parle d'un scrub trop ancien : correction.description = TrueNAS, Data Protection, Scrub Tasks : vérifier qu'une tâche de scrub existe et est activée (une fois par mois au minimum) ; risque = chaîne vide. N'écris aucune commande pour ce système. a_rapporter = chaîne vide.\",\n      \"Ollama : Ollama est installé directement sous Linux (pas en Docker) sur le PC Ollama (IP_PRIVEE_14), comme service systemd nommé ollama, avec un réglage personnalisé dans /etc/systemd/system/ollama.service.d que le script officiel conserve. Il n'y a ni instantané Proxmox ni interface de mise à jour, et la règle des 14 jours de Grafana et Loki ne s'applique pas : si une raison indique que la version est publiée depuis moins de 7 jours, suggestion = attendre qu'elle ait au moins 7 jours ; sinon suggestion = mettre Ollama à jour vers la nouvelle version. Écris exactement ces étapes dans correction.description, en remplaçant NOUVELLE par la nouvelle version indiquée dans les raisons : 1) depuis ton poste, se connecter au PC Ollama : `ssh UTILISATEUR_1@IP_PRIVEE_14` ; 2) noter les modèles installés : `ollama list` ; 3) lancer la mise à jour avec le script officiel : `curl -fsSL https://ollama.com/install.sh | sh` ; 4) vérifier la version, qui doit être NOUVELLE : `ollama --version` ; 5) vérifier que le service tourne : `systemctl status ollama --no-pager | head -3` ; 6) vérifier que les modèles sont toujours là : `ollama list`. correction.commande = chaîne vide. correction.risque = ne pas lancer la mise à jour pendant l'analyse de 4 h, car elle redémarre Ollama et le rapport du matin en dépend ; les modèles ne sont pas supprimés. Si une raison indique que la version est impossible à vérifier : causes = 2 maximum (le PC Ollama est éteint ou le service ollama arrêté ; GitHub injoignable) ; verifications = 1) dans Uptime Kuma, le moniteur du PC Ollama ; 2) sur le PC Ollama : `systemctl status ollama --no-pager | head -3` ; correction = trois chaînes vides.\",\n      \"Échéances : ce système regroupe les dates d'expiration (domaine, certificats) et les tests de restauration des sauvegardes, notés à la main dans le fichier echeances.json du site. Cette règle prime sur toutes les autres règles. Ce n'est jamais une panne : causes = tableau vide, verifications = tableau vide, a_rapporter = chaîne vide. Ne calcule aucune durée : recopie seulement les nombres de jours présents dans les raisons ou les données. Si le statut est ok : detail = une phrase avec l'échéance la plus proche (nom, date et jours restants, tirés des données). Si le statut est warn ou crit : detail = une phrase qui dit ce qui est expiré, bientôt expiré (avec le nombre de jours) ou jamais testé ; un test jamais fait n'est pas un retard, n'écris jamais « depuis plus de » pour un test jamais fait. suggestion = une phrase : faire les actions indiquées, puis mettre la nouvelle date dans echeances.json. correction.description = une étape numérotée 1), 2), 3) par élément des raisons : son nom, puis le texte qui suit « action : » ou « comment : » recopié mot pour mot, puis « Mettre ensuite la date dans echeances.json. ». correction.commande = chaîne vide. correction.risque = chaîne vide.\",\n      \"Tunnels et VPN : ce système regroupe les tunnels Cloudflare (accès de l'extérieur aux services du domaine DOMAINE_2.example : tunnel cloud et tunnel homeassistant) et les passerelles de pfSense (WAN vers le modem ISP Modem et NordVPN). Si le statut est ok : detail = une phrase avec le nombre de tunnels en bon état (healthy) et l'état des passerelles. Tunnel down, inactive ou dégradé : causes = 2 maximum (le conteneur ou service cloudflared est arrêté sur la machine qui héberge le tunnel ; panne Internet ou passerelle WAN en défaut) ; verifications = 1) Cloudflare, Zero Trust, Networks, Tunnels : l'état du tunnel et ses connecteurs ; 2) sur la machine qui héberge le tunnel, l'état du conteneur ou de l'app cloudflared (TrueNAS : Apps ; Home Assistant : Paramètres, Modules complémentaires) ; laisse commande vide ; correction.description = redémarrer l'app ou le module cloudflared concerné ; risque = les services de ce tunnel sont coupés de l'extérieur pendant quelques secondes. Passerelle VPN NordVPN down : c'est grave pour les VLAN qui sortent par le VPN, car le killswitch de pfSense leur coupe Internet ; causes = serveur NordVPN injoignable ou changé d'adresse, client OpenVPN arrêté ; verifications = 1) pfSense, Status, OpenVPN : l'état du client NordVPN ; 2) pfSense, Status, Gateways ; correction.description = pfSense, Status, OpenVPN : redémarrer le client NordVPN ; si le serveur ne répond plus, en choisir un autre dans VPN, OpenVPN, Clients ; risque = chaîne vide. Passerelle WAN down : causes = modem ISP Modem ou panne du fournisseur ; verifications = 1) pfSense, Status, Gateways ; 2) les voyants et l'interface du modem IP_PRIVEE_6 ; correction = trois chaînes vides. Perte ou délai élevé : causes = lien Internet chargé, serveur VPN éloigné ou surchargé ; correction = trois chaînes vides. N'écris aucune commande pour ce système.\",\n      \"Connexions refusées : ce système compte les échecs de connexion à pfSense dans les 24 dernières heures (interface web, SSH, et blocages de sshguard), lus dans Loki. Si le statut est ok : detail = une phrase avec le nombre total d'échecs (total_24h), ou « aucun échec de connexion en 24 h ». Adresse interne avec des échecs répétés : c'est le plus souvent un mot de passe mal tapé, un mot de passe enregistré périmé dans un navigateur, ou un script ou une app (n8n, Home Assistant) qui utilise un ancien mot de passe ; causes = 2 maximum ; verifications = 1) identifier l'appareil par son adresse IP (Unifi, Clients ou pfSense, Status, DHCP Leases) ; 2) pfSense, Status, System Logs, onglet General ou Authentication : l'heure et le compte utilisé ; correction = trois chaînes vides. Adresse externe : l'interface web ou le SSH de pfSense ne devrait jamais être joignable d'Internet ; causes = règle WAN ou redirection de port qui ouvre l'interface ou le SSH ; verifications = 1) pfSense, Firewall, Rules, onglet WAN, et Firewall, NAT, Port Forward : aucune règle ne doit viser le port PORT_PFSENSE ni le port 22 ; 2) pfSense, System, Advanced, Admin Access : l'interface et le SSH ; correction.description = supprimer ou désactiver la règle qui ouvre l'accès ; risque = ne pas désactiver une règle de la plage LAN qui sert à administrer pfSense depuis Linux-PC. sshguard : il bloque déjà ces adresses tout seul, aucune action sauf si une adresse externe est en cause. Ne propose jamais de bloquer une adresse privée (192.168.x.x ou 10.x.x.x). N'écris aucune commande. a_rapporter = chaîne vide.\",\n      \"Uptime Kuma et Grafana : si une raison indique que Grafana est sous 99 % de disponibilité, sache que Grafana est le conteneur nommé grafana dans le CT 110 de proxmox2 (adresse IP_PRIVEE_12, port 3000), et jamais un conteneur nommé root-grafana-1. Uptime Kuma ne tourne pas dans ce CT. La cause la plus fréquente est une sauvegarde planifiée du CT 110 ou un redémarrage de proxmox2. causes = 2 maximum. verifications = 1) dans l'interface Proxmox de proxmox2, Datacenter, Backup : l'heure du job de sauvegarde, puis dans le journal des tâches du nœud, voir si une sauvegarde du CT 110 correspond à la coupure ; 2) dans le shell de proxmox2 : `pct exec 110 -- docker ps` : les conteneurs loki, grafana et alloy doivent être Up. correction : si le mode de sauvegarde est Stop, description = dans Datacenter, Backup, modifier le job et choisir le mode Snapshot ; commande = chaîne vide ; sinon trois chaînes vides.\",\n      \"Uptime Kuma, moniteurs hors ligne : utilise data.hors_ligne et data.disponibilite_faible. Chaque moniteur a une description : lis-la, elle dit ce qu'est le moniteur ; n'en déduis jamais autre chose. Heures : donne l'heure d'une panne seulement si elle est écrite dans data.pannes_24h (debut, fin, ordre) ; recopie-la telle quelle ; sinon ne donne aucune date ni aucune heure. Si la panne de data.pannes_24h est terminee, commence detail par « Panne terminée : » avec l'heure de début et de fin, et suggestion = aucune action nécessaire si elle ne revient pas. Si data.pannes_24h donne une cause_probable, reprends-la et recopie l'ordre des pannes. Panne terminée d'un appareil de la maison (tous ses moniteurs sont de nouveau en ligne) : verifications = une seule étape sans risque, dans Uptime Kuma, la page du moniteur de la cause probable : son message d'erreur à l'heure de la panne ; ne parle jamais d'alimentation, de voyants ni de câble, car l'appareil fonctionne de nouveau ; causes = 2 maximum (redémarrage ou mise à jour de l'appareil, coupure brève de courant ou de lien) ; correction = trois chaînes vides. Disponibilité : pour chaque moniteur de data.disponibilite_faible, écris son nom suivi de sa propre valeur (exemple : NordVPN (tunnel) 98,6 %, ISP Provider (WAN) 98,9 %) ; n'écris jamais « chacun » avec deux valeurs. Moniteur distant (distant vrai) : ce n'est pas un appareil de la maison ; ne parle jamais d'alimentation, de voyants, de câble, de port de switch ni d'adresse IP locale ; ne propose jamais de redémarrer Uptime Kuma. Pour NordVPN (tunnel) : ce moniteur lit dans pfSense l'état de la passerelle NORDVPN1_VPNV4 ; en panne, le tunnel NordVPN est coupé et le kill switch bloque Internet pour les appareils qui passent par NordVPN (tous sauf TrueNAS) ; causes = 2 maximum (client OpenVPN NordVPN de pfSense arrêté ou bloqué ; serveur NordVPN en maintenance ou injoignable) ; verifications = 1) dans pfSense, Status, OpenVPN : l'état du client NordVPN ; 2) dans pfSense, Status, System Logs, onglet OpenVPN, à l'heure de la panne : pourquoi le tunnel s'est coupé et s'il s'est reconnecté ; si la panne est terminée : suggestion = aucune action si elle ne revient pas, correction = trois chaînes vides ; si la panne est en cours : suggestion = redémarrer le client NordVPN dans pfSense, et si le tunnel ne revient pas en une heure, choisir un autre serveur NordVPN dans VPN, OpenVPN, Clients ; correction.description = pfSense, Status, OpenVPN : bouton Restart du client NordVPN ; correction.commande = chaîne vide ; correction.risque = les appareils qui passent par NordVPN perdent Internet quelques secondes ; ne jamais modifier la Monitor IP de la passerelle NORDVPN1_VPNV4, car ça coupe tout le réseau. Pour ISP Provider (WAN) : causes = panne du réseau du fournisseur ISP ; verifications = 1) dans Uptime Kuma, le moniteur du modem ISP doit être en ligne ; 2) dans pfSense, Status, Gateways : WANGW ; suggestion = si le modem répond et pas le fournisseur, appeler ton fournisseur Internet avec l'heure de la panne. Uptime Kuma est une app TrueNAS (IP_PRIVEE_4, port PORT_KUMA) : jamais de commande systemctl pour Kuma ; s'il faut le redémarrer, c'est dans TrueNAS, Apps, uptime-kuma, Restart.\",\n      \"Snort : si une raison indique que Snort est arrêté sur une ou plusieurs interfaces de pfSense, c'est un problème de sécurité : le trafic de ces interfaces n'est plus inspecté. Les vérifications se font dans l'interface pfSense : Services, Snort, Snort Interfaces, l'état de chaque interface, puis le journal système. Une cause déjà rencontrée : une ligne de la liste de suppression (Suppress List) qui contient plusieurs adresses IP au lieu d'une seule. Il faut une adresse IP par ligne. Si une raison indique que la vérification de Snort est impossible, la cause est dans le workflow n8n : le nœud check_pfsense_services. N'écris aucune commande dans ce cas.\",\n      \"pfSense Journaux (Loki) : le rapport doit rester court, car les classements et les graphiques sont sur la page pfSense du dashboard et dans Grafana. Les IP externes sont déjà bloquées par pfSense (règle par défaut) ou par pfBlockerNG : un scan bloqué n'est pas une intrusion. Ne conclus jamais à une compromission à partir de ces seuls chiffres, ne propose jamais de bloquer une adresse privée (192.168.x.x ou 10.x.x.x) ni une plage entière d'adresses, et n'écris aucune commande sauf celles indiquées dans les paragraphes qui suivent. detail = recopie mot pour mot la valeur de resume_chiffres sans changer aucun nombre, puis ajoute en quelques mots la raison la plus importante s'il y en a une. Cite au maximum 2 adresses IP dans detail et dans les causes (les adresses recopiées dans correction.description pour la liste de blocage sont permises). Si note est présent dans les données, ajoute seulement « Comparaison avec la veille pas encore possible. ». causes = 2 maximum, verifications = 2 maximum, a_rapporter = chaîne vide (sauf si les logs sont absents).\",\n      \"pfSense Journaux, IP externes à surveiller : si une raison parle d'IP externes à surveiller, utilise wan.ips_a_surveiller, wan.nb_ips_a_surveiller et wan.nb_ips_score_50_plus. Chaque IP a déjà été vérifiée par n8n sur AbuseIPDB : score_abuse de 0 à 100, pays, fournisseur, domaine (nom de domaine de l'IP, peut être vide), type et nombre de rapports. N'invente jamais une réputation et ne vérifie rien toi-même : utilise seulement les valeurs données ; si wan.reputation_verifiee est faux, écris que la réputation n'a pas été vérifiée. detail contient aussi le nombre d'IP à surveiller et combien ont un score de 50 ou plus. causes = 2 maximum (balayage automatique d'Internet, IP connue pour des abus). verifications = 1) la page pfSense du dashboard, carte Attaques à surveiller : toutes les IP avec un lien AbuseIPDB ; 2) dans pfSense, Firewall, Rules, onglet WAN, puis Firewall, NAT, Port Forward : vérifier qu'aucune règle ni redirection n'ouvre les ports visés. Le blocage de ces IP est géré automatiquement par la liste de blocage (paragraphe suivant) : ne propose jamais de créer un alias ni une règle à la main. suggestion = aucune action nécessaire, ces IP sont déjà bloquées par le pare-feu, sauf si la liste de blocage a un changement ou une erreur à signaler. correction = trois chaînes vides, sauf indication du paragraphe suivant.\",\n      \"pfSense Journaux, liste de blocage : liste_blocage décrit l'alias pfSense Bloc_scanner_ip, que n8n met à jour tout seul avec les IP qui ont un score AbuseIPDB de 75 ou plus, OU au moins 200 tentatives en 24 h, OU au moins 50 ports différents (ces deux derniers peu importe le score), et qu'il regroupe en réseaux (par exemple trois adresses d'un même réseau remplacées par ce réseau). Ne propose jamais de créer ni de remplir cet alias à la main. Selon liste_blocage.etat : mise_a_jour = ajoute à detail « Liste de blocage mise à jour : N IP ajoutées, M regroupement(s) » en utilisant nb_ips_ajoutees et le nombre d'éléments de regroupements, sans autre action. a_mettre_a_jour = mode simulation, rien n'a été écrit : suggestion = changements proposés, pas encore appliqués ; correction.description = 1) IP à ajouter : recopie ips_ajoutees ; 2) regroupements proposés : recopie chaque reseau avec les adresses qu'il remplace ; 3) pour appliquer automatiquement, dans le nœud n8n check_pfsense_logs, remplacer mode: 'simulation' par mode: 'ecriture' dans le bloc BLOCAGE ; commande = chaîne vide ; risque = aucun tant que le mode reste simulation. erreur = recopie le texte de liste_blocage.erreur dans detail (il indique l'étape qui a échoué et le message de pfSense) ; causes = 2 maximum (clé de l'API pfSense absente, refusée ou sans droit d'écriture ; alias introuvable ou paquet REST API injoignable), verifications = 1) dans pfSense, System, REST API : le paquet répond et la clé est valide ; 2) Firewall, Aliases : l'alias Bloc_scanner_ip existe, sans bandeau Apply Changes en attente ; correction = trois chaînes vides. inchangee ou non_configuree = n'en parle pas. Recopie les adresses exactement comme dans les données.\",\n      \"pfSense Journaux, hôte interne ou nouvelle signature : si une raison parle d'alertes Snort répétées depuis un même hôte ou d'une signature Snort jamais vue, utilise snort.nouvelles_signatures_detail (chaque signature avec SES flux : source, destination, sens) et snort.alertes_par_hote (chaque hôte avec son origine). N'associe jamais à une signature une adresse IP qui n'est pas dans ses propres flux, et n'utilise jamais top_sources pour deviner l'appareil d'une signature. Explique en une phrase ce que la signature détecte d'après son nom, sans rien inventer. Traite chaque signature selon son sens. Sens entrante (la source est une adresse d'Internet) : ce n'est pas un appareil de la maison qui en est la cause ; ne propose jamais d'identifier un appareil source ni de l'ajouter à la Suppress List ; causes = scan automatisé venu d'Internet ; verifications = 1) dans pfSense, Services, Snort, Alerts : l'interface, la source et la destination de l'alerte ; normal = la destination n'offre pas ce service (aucune redirection de port vers elle dans Firewall, NAT, Port Forward) ; sinon = une redirection de port expose ce service à Internet, il faut la revoir ; correction = trois chaînes vides. Sens sortante ou interne (la source est un appareil de la maison) : causes = logiciel légitime sur cet appareil (navigateur, antivirus, VPN, application), appareil mal configuré ; verifications = 1) identifier l'appareil par l'adresse IP source de cette signature dans Unifi (Clients) ou dans pfSense, Status, DHCP Leases ; 2) dans pfSense, Services, Snort, Alerts : voir le détail et l'heure des alertes ; correction : description = si le comportement est légitime, ajouter l'adresse IP à la Suppress List de Snort (Services, Snort, Suppress, une seule adresse IP par ligne) ; pour un appareil douteux, l'isoler en bloquant ses accès dans Firewall, Rules, onglet de son VLAN, puis l'examiner ; commande = chaîne vide ; risque = une règle trop large peut couper des applications légitimes du VLAN, donc tester d'abord avec un seul appareil. Sens inconnu : dis que la source n'a pas pu être lue et propose seulement la vérification dans Services, Snort, Alerts. Le résultat normal d'une vérification ne décrit jamais une connexion venue d'Internet comme légitime.\",\n      \"pfSense Journaux, hausse de blocages : si une raison indique une forte hausse des blocages WAN ou des scans SYN, causes = campagne de scan massive sur Internet, changement récent de configuration (règle supprimée, service exposé). verifications = 1) la page pfSense du dashboard ou le dashboard Grafana pfSense - Pare-feu et Snort pour voir quelle interface et quelles IP ; 2) pfSense, Status, System Logs, Firewall. correction = trois chaînes vides.\",\n      \"pfSense Journaux, logs absents : si une raison indique qu'aucun log du pare-feu n'est reçu dans Loki, ou si l'appel a échoué, la cause est l'envoi syslog de pfSense ou le conteneur loki. verifications = 1) pfSense, Status, System Logs, Settings : Enable Remote Logging coché et serveur IP_PRIVEE_12:PORT_12 ; 2) dans le shell de proxmox2 : `pct exec 110 -- docker ps` : les conteneurs loki, grafana et alloy doivent être Up, et loki doit afficher le port 3100 ; 3) dans n8n, le nœud check_pfsense_logs. a_rapporter = coller le résultat de `pct exec 110 -- docker ps`. Si un conteneur est arrêté : correction.description = le redémarrer avec `pct exec 110 -- bash -c 'cd /opt/loki-stack && docker compose up -d'`, correction.commande = chaîne vide, correction.risque = aucun risque pour les données.\",\n      \"Plex : pour une mise à jour de Plex Media Server sur le Synology, DSM ne la propose pas. Les étapes sont : 1) lire les notes de version de Plex, car certaines mises à jour corrigent des failles de sécurité ; 2) télécharger le paquet .spk de Synology pour DSM 7 sur la page de téléchargement de Plex ; 3) l'installer à la main dans DSM, Centre de paquets, installation manuelle ; 4) vérifier la nouvelle version dans Plex Web. N'écris aucune commande.\",\n      \"Si une raison indique que des données sont vieilles de plus de 24 h, la cause est que la tâche automatique qui écrit ces données ne tourne plus. Ce n'est pas une mise à jour disponible. Ne parle jamais d'un service de mise à jour du système. Pour le Synology : dans DSM, Panneau de configuration, Planificateur de tâches, la tâche qui lance le script synology-updates.py doit être activée et avoir une dernière exécution récente. Pour tester à la main, en SSH sur le Synology, la seule commande exacte est : `sudo python3 /volume1/scripts/synology-updates.py`. Pour les apps TrueNAS : dans TrueNAS, System, Advanced, Cron Jobs, la tâche qui lance apps-updates.py ; test à la main : `sudo python3 /mnt/volume1/scripts/apps-updates.py`. Pour n8n : dans la console du conteneur n8n, `systemctl status n8n-version`. N'invente aucun autre chemin et aucune option comme --test ou --reinstall. Ces tâches doivent s'exécuter toutes les 30 minutes : ne propose aucun autre horaire. Dans ce cas, écris exactement 2 causes (la tâche n'existe pas ou est désactivée ; le script échoue) et exactement 2 vérifications (d'abord le Planificateur de tâches ou les Cron Jobs, puis la commande de test à la main avec la commande exacte indiquée). Ne propose jamais de réinstaller le script, de redémarrer l'appareil, ni de contrôler le processeur, la mémoire ou le disque. Aucune commande autre que celles indiquées ici n'est permise. correction.description = créer ou réactiver la tâche toutes les 30 minutes ; correction.commande = chaîne vide.\",\n      \"N'écris aucun markdown : ni astérisques, ni soulignements. Écris du texte simple. Les étapes numérotées s'écrivent 1), 2), 3). Une seule exception : entoure chaque commande complète à taper d'accents graves, par exemple `docker compose pull n8n`. Ne mets entre accents graves que des commandes, jamais du texte ordinaire, un chemin de menu ou un nom de bouton.\",\n      \"Pour des paquets ou des logiciels qui ont une mise à jour en attente, écris « mises à jour disponibles » ou « à mettre à jour ». N'écris jamais « à jour » dans ce cas, car « à jour » veut dire qu'il n'y a rien à mettre à jour.\",\n      \"a_rapporter : une phrase qui dit exactement quel résultat coller pour continuer le diagnostic.\"\n    ].join(\" \") },\n    { role: \"user\", content: \"Système : \" + $json.name + \"\\nStatut imposé : \" + ($json.statut || \"aucun, à déterminer par toi\") + \"\\nRaisons : \" + ($json.raisons || \"aucune\") + \"\\nDonnées : \" + $json.data }\n  ]\n}) }}",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2000,
+        -512
+      ],
+      "id": "11f32f68-e529-4e83-962a-109872a92e77",
+      "name": "Prompt Ollama"
+    },
+    {
+      "parameters": {
+        "url": "http://IP_PRIVEE_4:PORT_8/echeances.json",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1440,
+        32
+      ],
+      "id": "905222dc-fef4-4823-a354-06029cd5400d",
+      "name": "check_echeances"
+    },
+    {
+      "parameters": {
+        "jsCode": "// check_tunnels_vpn : v2026.11.12-6 : première version (tunnels Cloudflare + passerelles pfSense WAN et NordVPN)\n// check_tunnels_vpn\n// 1) Tunnels Cloudflare : état de chaque tunnel (healthy, degraded, down, inactive) et nombre de connexions,\n//    lus avec un jeton API en lecture seule (permission Account, Cloudflare Tunnel, Read).\n// 2) Passerelles pfSense : état, perte et délai de chaque passerelle (API REST v2 /status/gateways).\n//    Les passerelles VPN sont reconnues par leur nom (NORD ou VPN).\n// Sortie : 1 item { tunnels, tunnels_erreur, passerelles, passerelles_erreur }\n\nconst CLOUDFLARE = {\n  compte: 'A_REMPLIR',\n  jeton: 'A_REMPLIR',\n};\nconst PFSENSE = {\n  url: 'https://IP_PRIVEE_2:PORT_2',\n  cle: 'A_REMPLIR',   // la même clé que dans le nœud check_pfsense_logs\n};\n\nconst sortie = { tunnels: [], tunnels_erreur: null, passerelles: [], passerelles_erreur: null };\n\n// ---- 1) Tunnels Cloudflare ----\nif (CLOUDFLARE.jeton.startsWith('COLLER_')) {\n  sortie.tunnels_erreur = 'jeton Cloudflare absent dans le nœud check_tunnels_vpn';\n} else {\n  try {\n    const r = await this.helpers.httpRequest({\n      method: 'GET',\n      url: 'https://api.cloudflare.com/client/v4/accounts/' + CLOUDFLARE.compte + '/cfd_tunnel?is_deleted=false',\n      headers: { Authorization: 'Bearer ' + CLOUDFLARE.jeton },\n      json: true,\n    });\n    if (!r.success) {\n      sortie.tunnels_erreur = 'réponse Cloudflare en échec : ' + JSON.stringify(r.errors || r).slice(0, 150);\n    } else {\n      sortie.tunnels = (r.result || []).map(t => ({\n        nom: t.name,\n        etat: t.status,                                   // healthy, degraded, down, inactive\n        connexions: (t.connections || []).length,\n        centres: [...new Set((t.connections || []).map(c => c.colo_name).filter(Boolean))],\n        actif_depuis: t.conns_active_at || null,\n      }));\n    }\n  } catch (e) {\n    sortie.tunnels_erreur = 'appel Cloudflare impossible : ' + String(e.message).slice(0, 150);\n  }\n}\n\n// ---- 2) Passerelles pfSense ----\nconst texte = v => (v == null ? '' : String(v));\nconst nombre = v => { const n = parseFloat(texte(v).replace(',', '.')); return isNaN(n) ? null : n; };\nif (PFSENSE.cle.startsWith('COLLER_')) {\n  sortie.passerelles_erreur = 'clé API pfSense absente dans le nœud check_tunnels_vpn';\n} else {\n  try {\n    const r = await this.helpers.httpRequest({\n      method: 'GET',\n      url: PFSENSE.url + '/api/v2/status/gateways',\n      headers: { 'X-API-Key': PFSENSE.cle, Accept: 'application/json' },\n      skipSslCertificateValidation: true,\n      json: true,\n    });\n    const liste = Array.isArray(r.data) ? r.data : [];\n    if (!liste.length) sortie.passerelles_erreur = 'aucune passerelle dans la réponse : ' + JSON.stringify(r).slice(0, 150);\n    sortie.passerelles = liste.map(g => {\n      const nom = texte(g.name || g.gateway || g.monitorip);\n      return {\n        nom,\n        vpn: /nord|vpn/i.test(nom),\n        etat: texte(g.status),                            // online, down...\n        sous_etat: texte(g.substatus),                    // none, highloss, highdelay...\n        perte_pct: nombre(g.loss),\n        delai_ms: nombre(g.delay),\n        ip_surveillee: texte(g.monitorip),\n      };\n    });\n  } catch (e) {\n    sortie.passerelles_erreur = 'appel pfSense impossible : ' + String(e.message).slice(0, 150);\n  }\n}\n\nreturn [{ json: sortie }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1632,
+        48
+      ],
+      "id": "52e0b316-7274-476b-b03a-beee32f07198",
+      "name": "check_tunnels_vpn"
+    },
+    {
+      "parameters": {
+        "jsCode": "// check_connexions : v2026.11.12-6 : première version (échecs de connexion à pfSense lus dans Loki)\n// check_connexions\n// Lit dans Loki (CT 110, IP_PRIVEE_12:PORT_9) les 24 dernières heures des journaux pfSense qui parlent\n// d'échecs de connexion :\n//  - interface web pfSense : « webConfigurator authentication error for user 'x' from: IP » (app php-fpm ou php)\n//  - SSH de pfSense : « Failed password », « Invalid user » (app sshd)\n//  - sshguard : « Attack from \"IP\" ... », « Blocking \"IP\" ... » (app sshguard)\n// Regroupe par adresse IP et par compte. Sortie : 1 item { total, par_type, par_ip, comptes, exemples, erreur }\n\nconst LOKI = 'http://IP_PRIVEE_12:PORT_9';\nconst REQUETE = '{app=~\"php-fpm|php|sshd|sshguard\"} |~ \"(?i)authentication error|failed password|invalid user|attack from|blocking\"';\nconst LIMITE = 2000;\n\nconst maintenantNs = BigInt(Date.now()) * 1000000n;\nconst debutNs = maintenantNs - 24n * 3600n * 1000000000n;\nconst prive = ip => /^(10\\.|192\\.168\\.|172\\.(1[6-9]|2\\d|3[01])\\.|127\\.)/.test(ip);\n\nconst sortie = { total: 0, par_type: {}, par_ip: [], comptes: [], exemples: [], erreur: null, requete: REQUETE };\n\ntry {\n  const r = await this.helpers.httpRequest({\n    method: 'GET',\n    url: LOKI + '/loki/api/v1/query_range',\n    qs: { query: REQUETE, start: debutNs.toString(), end: maintenantNs.toString(), limit: LIMITE, direction: 'backward' },\n    json: true,\n  });\n  const lignes = [];\n  for (const s of (r.data && r.data.result) || []) {\n    const app = (s.stream && s.stream.app) || '?';\n    for (const [ts, msg] of s.values || []) lignes.push({ ts: Number(BigInt(ts) / 1000000n), app, msg: String(msg) });\n  }\n  lignes.sort((a, b) => b.ts - a.ts);\n\n  const ips = {}, comptes = {};\n  for (const l of lignes) {\n    let type;\n    if (/authentication error/i.test(l.msg)) type = 'interface web pfSense';\n    else if (/attack from|blocking/i.test(l.msg)) type = 'sshguard';\n    else type = 'SSH pfSense';\n    sortie.par_type[type] = (sortie.par_type[type] || 0) + 1;\n    sortie.total++;\n\n    const ip = (l.msg.match(/(\\d{1,3}(?:\\.\\d{1,3}){3})/) || [])[1] || 'inconnue';\n    const compte = (l.msg.match(/user '([^']+)'/i) || l.msg.match(/(?:invalid user|for(?: invalid user)?) (\\S+) from/i) || [])[1] || null;\n    const x = ips[ip] || (ips[ip] = { ip, externe: ip !== 'inconnue' && !prive(ip), tentatives: 0, types: {}, derniere: null });\n    x.tentatives++;\n    x.types[type] = (x.types[type] || 0) + 1;\n    if (!x.derniere) x.derniere = new Date(l.ts).toLocaleString('sv-SE', { timeZone: 'America/Toronto' }).slice(0, 16);\n    if (compte) comptes[compte] = (comptes[compte] || 0) + 1;\n    if (sortie.exemples.length < 5) sortie.exemples.push(l.msg.slice(0, 200));\n  }\n  sortie.par_ip = Object.values(ips).sort((a, b) => b.tentatives - a.tentatives).slice(0, 10)\n    .map(x => ({ ...x, types: Object.entries(x.types).map(([t, n]) => t + ' : ' + n).join(', ') }));\n  sortie.comptes = Object.entries(comptes).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([compte, n]) => ({ compte, tentatives: n }));\n  if (lignes.length >= LIMITE) sortie.note = 'limite de ' + LIMITE + ' lignes atteinte : le total est un minimum';\n} catch (e) {\n  sortie.erreur = 'lecture de Loki impossible : ' + String(e.message).slice(0, 150);\n}\n\nreturn [{ json: sortie }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        176
+      ],
+      "id": "8a42f25c-b6a7-45db-a733-9d1755d263f9",
+      "name": "check_connexions"
+    },
+    {
+      "parameters": {
+        "jsCode": "// check_ollama_updates : v2026.11.14-6 : première version\n// check_ollama_updates\n// Version d'Ollama installée sur le PC Ollama (IP_PRIVEE_14, /api/version) comparée à la dernière version\n// stable publiée sur GitHub (ollama/ollama, releases/latest : les versions rc ne comptent pas).\n// Sortie : 1 item { installee, derniere, publiee, jours_depuis_publication, type, erreur }\n//   type = 'majeure' | 'mineure' | 'correctif' | null (null = à jour)\n\nconst OLLAMA = 'http://IP_PRIVEE_14:PORT_11';\nconst GITHUB = 'https://api.github.com/repos/ollama/ollama/releases/latest';\n\n// \"v0.41.2\" ou \"0.41.2\" -> [0, 41, 2] ; null si illisible\nfunction numeros(v) {\n  const m = String(v || '').match(/(\\d+)\\.(\\d+)\\.(\\d+)/);\n  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;\n}\nconst court = v => { const n = numeros(v); return n ? n.join('.') : String(v || ''); };\n\nconst sortie = { installee: null, derniere: null, publiee: null, jours_depuis_publication: null, type: null, erreur: null };\n\n// 1) Version installée\ntry {\n  const r = await this.helpers.httpRequest({ method: 'GET', url: OLLAMA + '/api/version', json: true, timeout: 10000 });\n  sortie.installee = r && r.version ? court(r.version) : null;\n  if (!sortie.installee) sortie.erreur = 'réponse inattendue de /api/version : ' + JSON.stringify(r).slice(0, 120);\n} catch (e) {\n  sortie.erreur = 'Ollama injoignable (' + OLLAMA + ') : ' + String(e.message).slice(0, 120);\n}\n\n// 2) Dernière version stable sur GitHub\nif (!sortie.erreur) {\n  try {\n    const r = await this.helpers.httpRequest({\n      method: 'GET', url: GITHUB, json: true, timeout: 15000,\n      headers: { 'User-Agent': 'n8n-homelab', Accept: 'application/vnd.github+json' },\n    });\n    sortie.derniere = court(r.tag_name);\n    sortie.publiee = r.published_at ? String(r.published_at).slice(0, 10) : null;\n    if (sortie.publiee) {\n      sortie.jours_depuis_publication = Math.floor((Date.now() - Date.parse(sortie.publiee + 'T00:00:00Z')) / 86400000);\n    }\n  } catch (e) {\n    sortie.erreur = 'lecture de GitHub impossible : ' + String(e.message).slice(0, 120);\n  }\n}\n\n// 3) Comparaison\nconst a = numeros(sortie.installee), b = numeros(sortie.derniere);\nif (!sortie.erreur && a && b) {\n  if (b[0] > a[0]) sortie.type = 'majeure';\n  else if (b[0] === a[0] && b[1] > a[1]) sortie.type = 'mineure';\n  else if (b[0] === a[0] && b[1] === a[1] && b[2] > a[2]) sortie.type = 'correctif';\n} else if (!sortie.erreur) {\n  sortie.erreur = 'version illisible (installée : ' + sortie.installee + ', publiée : ' + sortie.derniere + ')';\n}\n\nreturn [{ json: sortie }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        -144
+      ],
+      "id": "70e48062-cdbc-4122-93e4-2fae5c09fbe8",
+      "name": "check_ollama_updates"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "check_truenas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Upsert row(s)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_truenas": {
+      "main": [
+        [
+          {
+            "node": "check_truenas_apps",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_synology": {
+      "main": [
+        [
+          {
+            "node": "check_synology_updates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_pfsense": {
+      "main": [
+        [
+          {
+            "node": "check_pfsense_services",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_ha": {
+      "main": [
+        [
+          {
+            "node": "check_unifi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_kuma": {
+      "main": [
+        [
+          {
+            "node": "check_pfsense_logs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Préparer systèmes": {
+      "main": [
+        [
+          {
+            "node": "Prompt Ollama",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_unifi": {
+      "main": [
+        [
+          {
+            "node": "check_unifi_apps_updates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_poxmox1": {
+      "main": [
+        [
+          {
+            "node": "check_proxmox1_updates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "check_truenas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_synology_updates": {
+      "main": [
+        [
+          {
+            "node": "check_pfsense",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_proxmox1_updates": {
+      "main": [
+        [
+          {
+            "node": "check_proxmox2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_proxmox2_updates": {
+      "main": [
+        [
+          {
+            "node": "check_n8n_updates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_n8n_updates": {
+      "main": [
+        [
+          {
+            "node": "check_kuma",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_proxmox2": {
+      "main": [
+        [
+          {
+            "node": "check_proxmox2_updates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_truenas_apps": {
+      "main": [
+        [
+          {
+            "node": "check_synology",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_pfsense_services": {
+      "main": [
+        [
+          {
+            "node": "check_ha",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_pfsense_logs": {
+      "main": [
+        [
+          {
+            "node": "check_loki_updates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_loki_updates": {
+      "main": [
+        [
+          {
+            "node": "check_echeances",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_unifi_apps_updates": {
+      "main": [
+        [
+          {
+            "node": "check_truenas_sante",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_truenas_sante": {
+      "main": [
+        [
+          {
+            "node": "check_synology_sante",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_synology_sante": {
+      "main": [
+        [
+          {
+            "node": "check_proxmox1_backups",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_proxmox1_backups": {
+      "main": [
+        [
+          {
+            "node": "check_proxmox2_backups",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_proxmox2_backups": {
+      "main": [
+        [
+          {
+            "node": "check_proxmox1_disques",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_proxmox1_disques": {
+      "main": [
+        [
+          {
+            "node": "check_proxmox2_disques",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_proxmox2_disques": {
+      "main": [
+        [
+          {
+            "node": "check_poxmox1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prompt Ollama": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_echeances": {
+      "main": [
+        [
+          {
+            "node": "check_tunnels_vpn",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_tunnels_vpn": {
+      "main": [
+        [
+          {
+            "node": "check_connexions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_connexions": {
+      "main": [
+        [
+          {
+            "node": "check_ollama_updates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check_ollama_updates": {
+      "main": [
+        [
+          {
+            "node": "Préparer systèmes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "72168968-a981-4012-844a-b7e0ddd35336",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "8130f57fae415683139811b2d51638f30d2fd4c001e5e0928ad85efb2ab9daa5"
+  },
+  "nodeGroups": [],
+  "id": "nreYrZXIM6xG7rfH",
+  "tags": []
+}

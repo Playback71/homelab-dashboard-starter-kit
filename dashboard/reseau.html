@@ -1,0 +1,1218 @@
+<!DOCTYPE html>
+<!-- reseau.html : v2026.11.17-10 : English version (MY HOMELAB starter kit). Network page: Internet diagnosis chain, device history on click, 30-day outage log, network map with Kuma history -->
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>HomeLab Network</title>
+
+<link rel="stylesheet" href="./css/style.css">
+
+<link rel="stylesheet"
+href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+
+<style>
+
+.network-map{
+
+display:flex;
+
+flex-direction:column;
+
+align-items:center;
+
+gap:25px;
+
+}
+
+
+
+.network-row{
+
+display:flex;
+
+justify-content:center;
+
+gap:25px;
+
+flex-wrap:wrap;
+
+}
+
+
+
+.network-device{
+
+background:
+
+rgba(0,0,0,.45);
+
+border:
+
+1px solid #00eaff;
+
+border-radius:20px;
+
+padding:20px;
+
+min-width:180px;
+
+text-align:center;
+
+box-shadow:
+
+0 0 15px rgba(0,238,255,.3);
+
+}
+
+
+
+.network-device i{
+
+font-size:35px;
+
+color:#00eaff;
+
+margin-bottom:10px;
+
+}
+
+
+
+.status{
+
+color:#00ff88;
+
+font-size:14px;
+
+}
+
+
+
+.connection{
+
+height:40px;
+
+width:3px;
+
+background:#00eaff;
+
+box-shadow:
+
+0 0 10px #00eaff;
+
+}
+
+
+
+.network-stack{
+
+display:flex;
+
+flex-direction:column;
+
+align-items:center;
+
+gap:15px;
+
+}
+
+
+
+.network-stack .connection{
+
+height:15px;
+
+}
+
+
+
+.heartbeat-bar{
+
+display:flex;
+
+gap:2px;
+
+margin-top:12px;
+
+justify-content:center;
+
+flex-wrap:wrap;
+
+}
+
+
+
+.heartbeat-bar .beat{
+
+width:3px;
+
+height:38px;
+
+border-radius:1.5px;
+
+background:#555;
+
+transition:background .3s;
+
+}
+
+
+
+.heartbeat-bar .beat.up{
+
+background:#00ff88;
+
+box-shadow:0 0 6px #00ff88;
+
+}
+
+
+
+.heartbeat-bar .beat.down{
+
+background:#ff4a4a;
+
+box-shadow:0 0 6px #ff4a4a;
+
+}
+
+
+
+.heartbeat-since{
+
+font-size:12px;
+
+color:#aaa;
+
+margin-top:6px;
+
+}
+
+
+
+
+/* Internet diagnosis */
+.diag-panel{max-width:820px;margin:0 auto 30px;}
+.diag-phrase{text-align:center;font-size:1.25rem;font-weight:700;margin:4px 0 18px;padding:12px 16px;border-radius:14px;border:1px solid #00ff88;color:#00ff88;background:rgba(0,255,100,.10);}
+.diag-phrase.panne{border-color:#ff4a4a;color:#ff6b6b;background:rgba(255,74,74,.12);}
+.diag-phrase.local{border-color:#ffc107;color:#ffc107;background:rgba(255,193,7,.10);}
+.diag-chaine{display:flex;flex-direction:column;align-items:stretch;gap:0;}
+.diag-maillon{display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;gap:14px;padding:12px 16px;border-radius:14px;background:rgba(0,0,0,.45);border:1px solid rgba(0,238,255,.35);}
+.diag-maillon i{font-size:24px;color:#00eaff;text-align:center;}
+.diag-nom{font-size:1.1rem;font-weight:700;color:#eef6fb;}
+.diag-detail{font-size:.98rem;color:#cfe3ee;}
+.diag-etat{font-weight:700;font-size:1rem;padding:5px 12px;border-radius:20px;white-space:nowrap;border:1px solid currentColor;}
+.diag-etat.ok{color:#00ff88;}
+.diag-etat.ko{color:#ff4a4a;}
+.diag-etat.csq{color:#ffa94d;}
+.diag-etat.inconnu{color:#9fb3c2;}
+.diag-maillon.cause{border-color:#ff4a4a;box-shadow:0 0 18px rgba(255,74,74,.35);}
+.diag-maillon.cause i{color:#ff4a4a;}
+.diag-lien{width:3px;height:16px;margin:0 auto;background:#00eaff;box-shadow:0 0 8px #00eaff;}
+.diag-lien.ko{background:#ff4a4a;box-shadow:0 0 8px #ff4a4a;}
+.diag-incidents{margin-top:22px;}
+.diag-incidents h3{font-size:1.1rem;margin-bottom:10px;text-align:center;}
+.diag-bascule{font:inherit;font-size:1.1rem;font-weight:700;color:#00eaff;background:rgba(0,238,255,.06);border:1px solid rgba(0,238,255,.35);border-radius:12px;padding:8px 16px;cursor:pointer;display:inline-flex;align-items:center;gap:10px;}
+.diag-bascule:hover{background:rgba(0,238,255,.14);}
+.diag-bascule:focus-visible{outline:2px solid #00eaff;outline-offset:3px;}
+.diag-bascule .fleche{display:inline-block;transition:transform .2s;}
+.diag-bascule[aria-expanded="true"] .fleche{transform:rotate(90deg);}
+.diag-compte{font-weight:700;color:#eef6fb;}
+.diag-compte.rouge{color:#ff6b6b;}
+.diag-incident{padding:10px 14px;border-radius:12px;background:rgba(0,0,0,.35);border-left:4px solid #ff4a4a;margin-bottom:8px;font-size:1rem;color:#eef6fb;line-height:1.5;}
+.diag-incident.court{border-left-color:#ffc107;}
+.diag-incident b{color:#ff6b6b;}
+.diag-incident .ordre{color:#cfe3ee;font-size:.95rem;}
+.diag-vide{text-align:center;color:#cfe3ee;font-size:1rem;}
+.diag-ordre{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:3px;}
+.diag-ordre li{display:grid;grid-template-columns:26px minmax(0,1fr);gap:6px;font-size:.95rem;color:#cfe3ee;}
+.diag-ordre li b{color:#eef6fb;}
+.diag-ordre .num{color:#00eaff;font-weight:700;text-align:right;}
+.diag-fenetre{text-align:center;color:#9fdcf0;font-size:.92rem;margin-top:6px;}
+@media (max-width:900px){.diag-maillon{grid-template-columns:34px minmax(0,1fr) auto;gap:10px;padding:10px 12px;}.diag-maillon i{font-size:20px;}.diag-nom{font-size:1rem;}.diag-detail{font-size:.9rem;}.diag-etat{font-size:.9rem;padding:4px 9px;}.diag-phrase{font-size:1.05rem;}}
+
+</style>
+
+
+<style id="zoom-mobile">@media (max-width:900px){html{zoom:0.9}}</style>
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<style id="histo-appareil-css">
+/* Device history (click on a card of the network map) */
+.network-device{cursor:pointer;}
+.network-device:hover{box-shadow:0 0 22px rgba(0,238,255,.55);}
+.ha-fond{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;}
+.ha-fond[hidden]{display:none;}
+.ha-boite{background:#06121a;border:1px solid #00eaff;border-radius:18px;box-shadow:0 0 30px rgba(0,238,255,.35);width:min(980px,100%);max-height:92vh;overflow-y:auto;padding:18px 20px;color:#e8f6ff;}
+.ha-tete{display:flex;align-items:center;gap:12px;margin-bottom:12px;}
+.ha-tete i{font-size:26px;color:#00eaff;}
+.ha-tete h2{margin:0;font-size:1.35rem;color:#00eaff;flex:1;}
+.ha-fermer{font:inherit;font-size:1.05rem;color:#e8f6ff;background:rgba(0,0,0,.35);border:1px solid rgba(0,238,255,.45);border-radius:10px;padding:6px 14px;cursor:pointer;}
+.ha-boutons{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:12px;}
+.ha-boutons button{font:inherit;font-size:1rem;color:#e8f6ff;background:rgba(0,0,0,.35);border:1px solid rgba(0,238,255,.35);border-radius:10px;padding:7px 16px;cursor:pointer;}
+.ha-boutons button.actif{background:rgba(0,238,255,.2);color:#00eaff;border-color:#00eaff;font-weight:700;}
+.ha-graph{width:100%;min-height:110px;}
+.ha-graph svg{width:100%;height:auto;display:block;touch-action:pan-y;}
+.ha-info{min-height:1.6em;text-align:center;font-size:1.05rem;margin-top:6px;font-variant-numeric:tabular-nums;}
+.ha-resume{display:flex;justify-content:center;gap:6px 22px;flex-wrap:wrap;margin-top:10px;font-size:1.05rem;font-variant-numeric:tabular-nums;}
+.ha-resume b{color:#00eaff;}
+.ha-legende{display:flex;justify-content:center;gap:6px 18px;flex-wrap:wrap;margin-top:10px;font-size:1rem;}
+.ha-legende span{display:inline-flex;align-items:center;gap:6px;}
+.ha-legende i{display:inline-block;width:14px;height:14px;border-radius:3px;}
+.ha-pannes{margin-top:14px;font-size:1rem;line-height:1.6;}
+.ha-pannes h3{font-size:1.05rem;color:#00eaff;margin:0 0 6px 0;}
+.ha-pannes ul{margin:0;padding-left:20px;}
+.ha-note{margin-top:10px;font-size:1rem;color:#e8f6ff;text-align:center;}
+@media (max-width:900px){.ha-boite{padding:14px 12px;}.ha-boutons button{padding:6px 12px;font-size:.95rem;}.ha-info,.ha-resume{font-size:.95rem;}}
+</style>
+</head>
+
+
+
+
+
+<body class="compact-cards">
+
+
+<div class="background"></div>
+
+<div class="overlay"></div>
+
+
+
+
+
+<header>
+
+
+<div class="logo">
+
+<i class="fa-solid fa-server"></i>
+
+MY HOMELAB
+
+</div>
+
+
+
+
+
+<nav>
+
+
+<a href="/index.html">
+
+<i class="fa-solid fa-gauge"></i>
+
+Dashboard
+
+</a>
+
+
+
+
+
+
+
+
+<a href="/documentation.html">
+
+<i class="fa-solid fa-book"></i>
+
+Documentation
+
+</a>
+
+
+
+
+<a href="/journal.html">
+
+<i class="fa-solid fa-clock-rotate-left"></i>
+
+Journal
+
+</a>
+
+
+
+
+<a class="active" href="/reseau.html">
+
+<i class="fa-solid fa-network-wired"></i>
+
+Network
+
+</a>
+
+
+
+
+<a href="/supervision.html">
+
+<i class="fa-solid fa-eye"></i>
+
+Supervision
+
+</a>
+
+
+
+
+<a href="/proxmox.html">
+
+<i class="fa-solid fa-layer-group"></i>
+
+Proxmox
+
+</a>
+        <a href="/pfsense.html"><i class="fa-solid fa-shield-halved"></i> pfSense</a>
+
+
+
+</nav>
+
+
+
+<div class="time">
+<i class="fa-regular fa-clock"></i>
+<span id="clock">00:00:00</span>
+</div>
+
+</header>
+
+
+
+
+
+
+
+<main>
+
+
+
+
+
+<section class="hero">
+
+
+<h1>
+
+NETWORK OPERATIONS CENTER
+
+</h1>
+
+
+<p>
+
+HomeLab network topology
+
+</p>
+
+
+
+<div class="online" id="network-status-banner">
+
+<i class="fa-solid fa-circle"></i>
+
+<span id="network-status-text">Network operational</span>
+
+</div>
+
+
+</section>
+
+
+
+
+
+
+
+
+
+<section class="cards">
+
+<div class="card">
+<i class="fa-solid fa-signal"></i>
+<h2>WAN traffic</h2>
+<div class="number" id="noc-traffic-val">--</div>
+<p>&darr; <span id="noc-traffic-down">--</span> &nbsp; &uarr; <span id="noc-traffic-up">--</span></p>
+</div>
+
+<div class="card">
+<i class="fa-solid fa-lock"></i>
+<h2>Security</h2>
+<div class="number" id="noc-sec-val">--</div>
+<p id="noc-sec-detail">Loading…</p>
+<p id="noc-sec-blocks"></p>
+</div>
+
+</section>
+
+
+<section class="panel diag-panel" id="diagnostic-internet">
+<h2><i class="fa-solid fa-route"></i> Internet diagnosis</h2>
+<div class="diag-phrase" id="diag-phrase">Loading…</div>
+<div class="diag-chaine" id="diag-chaine"></div>
+<div class="diag-incidents">
+<h3><button type="button" class="diag-bascule" id="diag-bascule" aria-expanded="false" aria-controls="diag-corps">
+<span class="fleche">▸</span><span id="diag-titre-pannes">Recent outages</span><span class="diag-compte" id="diag-compte"></span></button></h3>
+<div id="diag-corps" hidden>
+<div id="diag-incidents"><p class="diag-vide">Loading…</p></div>
+<p class="diag-fenetre" id="diag-fenetre"></p>
+</div>
+</div>
+</section>
+
+
+<section class="panel">
+
+
+<h2>
+
+<i class="fa-solid fa-diagram-project"></i>
+
+Network map
+
+</h2>
+
+
+
+
+
+
+<div class="network-map">
+
+
+
+    <!-- Row 1: Internet entries (Google above the ISP modem) -->
+    <div class="network-row">
+        <div class="network-stack">
+            <div class="network-device" id="kuma-2">
+                <i class="fa-solid fa-cloud"></i>
+                <h3>Google</h3>
+                <div class="status">online</div>
+                <div class="heartbeat-bar" id="history-2"></div>
+                <div class="heartbeat-since" id="since-2"></div>
+            </div>
+            <div class="connection"></div>
+            <div class="network-device" id="kuma-1">
+                <i class="fa-solid fa-globe"></i>
+                <h3>ISP modem</h3>
+                <div class="status">online</div>
+                <div class="heartbeat-bar" id="history-1"></div>
+                <div class="heartbeat-since" id="since-1"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="connection"></div>
+
+    <!-- Row 2: the firewall (pfSense) -->
+    <div class="network-row">
+        <div class="network-device" id="kuma-pfsense">
+            <i class="fa-solid fa-shield-halved"></i>
+            <h3>pfsense</h3>
+            <div class="status">online</div>
+        </div>
+    </div>
+
+    <div class="connection"></div>
+
+    <!-- Row 3: main servers and equipment -->
+    <div class="network-row">
+        <div class="network-device" id="kuma-4">
+            <i class="fa-solid fa-key"></i>
+            <h3>CloudKey+</h3>
+            <div class="status">online</div>
+        </div>
+        <div class="network-device" id="kuma-5">
+            <i class="fa-solid fa-video"></i>
+            <h3>UNVR</h3>
+            <div class="status">online</div>
+        </div>
+        <div class="network-device" id="kuma-6">
+            <i class="fa-solid fa-server"></i>
+            <h3>Synology NAS</h3>
+            <div class="status">online</div>
+        </div>
+        <div class="network-device" id="kuma-7">
+            <i class="fa-solid fa-server"></i>
+            <h3>TrueNAS</h3>
+            <div class="status">online</div>
+        </div>
+    </div>
+
+    <div class="connection"></div>
+
+    <!-- Row 4: applications hosted on TrueNAS -->
+    <div class="network-row">
+        <div class="network-device" id="kuma-8">
+            <i class="fa-solid fa-cloud"></i>
+            <h3>Nextcloud</h3>
+            <div class="status">online</div>
+            <div class="heartbeat-bar" id="history-8"></div>
+            <div class="heartbeat-since" id="since-8"></div>
+        </div>
+        <div class="network-device" id="kuma-9">
+            <i class="fa-solid fa-house-signal"></i>
+            <h3>Home Assistant</h3>
+            <div class="status">online</div>
+            <div class="heartbeat-bar" id="history-9"></div>
+            <div class="heartbeat-since" id="since-9"></div>
+        </div>
+    </div>
+
+    <div class="connection"></div>
+
+    <!-- Row 5: Proxmox hypervisors and Ollama server -->
+    <div class="network-row">
+        <div class="network-device" id="kuma-16">
+            <i class="fa-solid fa-layer-group"></i>
+            <h3>Proxmox1</h3>
+            <div class="status">online</div>
+            <div class="heartbeat-bar" id="history-16"></div>
+            <div class="heartbeat-since" id="since-16"></div>
+        </div>
+        <div class="network-device" id="kuma-17">
+            <i class="fa-solid fa-layer-group"></i>
+            <h3>Proxmox2</h3>
+            <div class="status">online</div>
+            <div class="heartbeat-bar" id="history-17"></div>
+            <div class="heartbeat-since" id="since-17"></div>
+        </div>
+        <div class="network-device" id="kuma-ollama">
+            <i class="fa-solid fa-brain"></i>
+            <h3>Ollama-Server</h3>
+            <div class="status">online</div>
+            <div class="heartbeat-bar" id="history-ollama"></div>
+            <div class="heartbeat-since" id="since-ollama"></div>
+        </div>
+        <div class="network-device" id="kuma-jetkvm">
+            <i class="fa-solid fa-keyboard"></i>
+            <h3>JetKVM</h3>
+            <div class="status">online</div>
+            <div class="heartbeat-bar" id="history-jetkvm"></div>
+            <div class="heartbeat-since" id="since-jetkvm"></div>
+        </div>
+    </div>
+
+
+
+</div>
+
+
+
+</section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</main>
+
+
+
+
+
+
+
+<footer>
+
+MY HOMELAB © 2026
+
+</footer>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+    const KUMA_API = "/kuma-api/api/status-page/heartbeat/homelab";
+
+    // Monitors added later to Kuma (Ollama-Server, JetKVM) have no id known in advance:
+    // they are found by their name in the status page "homelab".
+    // If a monitor is not on the status page, its card stays "online" with no history.
+    const KUMA_NAMES = "/kuma-api/api/status-page/homelab";
+    const PAR_NOM = {
+        ollama: /ol+ama/i, jetkvm: /jet\s*-?\s*kvm/i,
+        // Internet diagnosis
+        max1: /pro\s*max\s*-?\s*1\b/i, max2: /pro\s*max\s*-?\s*2\b/i,
+        isp: /isp/i, nordvpn: /nordvpn/i,   // nordvpn: Kuma monitor named "NordVPN (tunnel)" (VPN gateway status read in pfSense)
+        pfsense: /^\s*pf\s*sense\s*$/i   // the Ping monitor named exactly "pfSense"
+    };
+    let idsParNom = null;
+
+    // Made visible for the device history (script at the bottom of the page)
+    window.trouverIdsParNom = () => trouverIdsParNom();
+    async function trouverIdsParNom() {
+        if (idsParNom && Object.keys(idsParNom).length === Object.keys(PAR_NOM).length) return idsParNom;
+        idsParNom = {};
+        try {
+            const r = await fetch(KUMA_NAMES);
+            if (!r.ok) return idsParNom;
+            const info = await r.json();
+            (info.publicGroupList || []).forEach(g => (g.monitorList || []).forEach(m => {
+                for (const [cle, motif] of Object.entries(PAR_NOM)) {
+                    if (motif.test(m.name || "")) idsParNom[cle] = String(m.id);
+                }
+            }));
+        } catch (e) {
+            console.warn("Kuma monitor names unavailable:", e);
+        }
+        return idsParNom;
+    }
+
+    async function updateNetworkStatus() {
+        try {
+            const response = await fetch(KUMA_API);
+            if (!response.ok) throw new Error("HTTP error: " + response.status);
+
+            const data = await response.json();
+            const heartbeats = data.heartbeatList || {};
+
+            const ids = await trouverIdsParNom();
+            for (const [cle, id] of Object.entries(ids)) heartbeats[cle] = heartbeats[id];
+
+            document.querySelectorAll("[id^='kuma-']").forEach(device => {
+                const idStr = device.id.replace("kuma-", "");
+                const statusDiv = device.querySelector(".status");
+
+                if (statusDiv && heartbeats[idStr] && heartbeats[idStr].length > 0) {
+                    const list = heartbeats[idStr];
+                    const lastHeartbeat = list[list.length - 1];
+                    const isOnline = lastHeartbeat && lastHeartbeat.status === 1;
+
+                    statusDiv.textContent = isOnline ? "online" : "offline";
+                    statusDiv.style.color = isOnline ? "#00ff88" : "#ff4a4a";
+                } else if (statusDiv) {
+                    // debug: no heartbeat found for this ID
+                    console.warn(`No heartbeat found for ID ${idStr}`);
+                }
+            });
+
+            // Internet diagnosis: chain, cause of the outage, recent outages, and top banner
+            diagnosticInternet(heartbeats);
+
+            // History of the Google monitor (ID 2)
+            renderHistoryBar("2", "history-2", "since-2", heartbeats);
+
+            // History of the ISP modem monitor (ID 1)
+            renderHistoryBar("1", "history-1", "since-1", heartbeats);
+
+            // History of the Home Assistant monitor (ID 9)
+            renderHistoryBar("9", "history-9", "since-9", heartbeats);
+
+            // History of the Nextcloud monitor (ID 8)
+            renderHistoryBar("8", "history-8", "since-8", heartbeats);
+
+            // History of Proxmox1 (ID 16), Proxmox2 (ID 17), Ollama-Server and JetKVM
+            renderHistoryBar("16", "history-16", "since-16", heartbeats);
+            renderHistoryBar("17", "history-17", "since-17", heartbeats);
+            renderHistoryBar("ollama", "history-ollama", "since-ollama", heartbeats);
+            renderHistoryBar("jetkvm", "history-jetkvm", "since-jetkvm", heartbeats);
+        } catch (error) {
+            console.error("Kuma sync failed:", error);
+        }
+    }
+
+    // ===== Internet diagnosis =====
+    // The chain goes from your home (bottom) to the Internet (top). The first failing link starting from the bottom
+    // is the CAUSE; the failing links above it are CONSEQUENCES.
+    // ISP (the ISP in the original): Kuma JSON Query monitor that reads the pfSense WAN gateway status (8.8.8.8 tested through the WAN).
+    // VPN (NordVPN in the original): Kuma JSON Query monitor that reads the VPN gateway status in pfSense
+    // (the same API as the ISP monitor, another gateway name). If it is down while the ISP answers, Internet works
+    // but the tunnel is down. Do not ping the VPN server instead: that ping goes out through the WAN and never sees a dead tunnel.
+    // Adapt the chain to YOUR devices: one entry per link, from the bottom up.
+    const CHAINE = [   // from the bottom up
+        { cle: "max2",    nom: "USW Pro Max-2",  icone: "fa-network-wired",  detail: "Switch 2 (servers)",            cause: "the USW Pro Max-2 switch (local network)" },
+        { cle: "max1",    nom: "USW Pro Max-1",  icone: "fa-network-wired",  detail: "Switch 1 (core)",            cause: "the USW Pro Max-1 switch (local network)" },
+        { cle: "pfsense", nom: "pfSense",        icone: "fa-shield-halved",  detail: "Firewall",          cause: "the pfSense firewall" },
+        { cle: "1",       nom: "ISP modem",      icone: "fa-globe",          detail: "ISP modem",                cause: "the ISP modem (or the cable)" },
+        { cle: "isp",  nom: "ISP",            icone: "fa-cloud",          detail: "Google 8.8.8.8 through the WAN", cause: "the Internet provider" },
+        { cle: "nordvpn", nom: "VPN",            icone: "fa-user-shield",    detail: "Tunnel connected (pfSense)",    cause: "the VPN: the pfSense tunnel is down (Internet works)" }
+    ];
+    const JOURS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const tempsKuma = (s) => new Date(String(s).replace(" ", "T") + "Z").getTime();
+    const hhmm = (t) => { const d = new Date(t); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
+    const hhmmss = (t) => { const d = new Date(t); return hhmm(t) + ":" + String(d.getSeconds()).padStart(2, "0"); };
+    const duree = (ms) => { const m = Math.max(1, Math.round(ms / 60000)); return m < 60 ? m + " min" : Math.floor(m / 60) + " h " + String(m % 60).padStart(2, "0"); };
+    const jourHeure = (t) => { const d = new Date(t); return JOURS[d.getDay()] + " " + d.getDate() + ", " + hhmm(t); };
+
+    // Analysis: current state of each link and the cause
+    function analyser(etats) {
+        const enPanne = CHAINE.filter(m => etats[m.cle] === "ko");
+        const cause = enPanne.length ? enPanne[0] : null;
+        return { cause, enPanne };
+    }
+
+    function diagnosticInternet(heartbeats) {
+        // 1) Current state of each link (last Kuma heartbeat; 0 = offline, 1 = online)
+        const etats = {};
+        CHAINE.forEach(m => {
+            const liste = heartbeats[m.cle] || [];
+            const der = [...liste].reverse().find(b => b.status === 0 || b.status === 1);
+            etats[m.cle] = der ? (der.status === 1 ? "ok" : "ko") : "inconnu";
+        });
+        const { cause } = analyser(etats);
+        const iCause = cause ? CHAINE.indexOf(cause) : -1;
+
+        // 2) Chain shown from the top (VPN) down to the bottom (switches)
+        const chaineEl = document.getElementById("diag-chaine");
+        let html = "";
+        [...CHAINE].reverse().forEach((m, k) => {
+            const i = CHAINE.indexOf(m);
+            let classe = etats[m.cle], texte = { ok: "Online", ko: "Offline", inconnu: "No monitor" }[etats[m.cle]];
+            if (cause && etats[m.cle] === "ko" && i > iCause) { classe = "csq"; texte = "Consequence"; }
+            if (cause && i === iCause) texte = "CAUSE";
+            if (k > 0) html += '<div class="diag-lien' + (etats[m.cle] === "ko" ? " ko" : "") + '"></div>';
+            html += '<div class="diag-maillon' + (cause && i === iCause ? " cause" : "") + '">' +
+                '<i class="fa-solid ' + m.icone + '"></i>' +
+                '<div><div class="diag-nom">' + m.nom + '</div><div class="diag-detail">' + m.detail + '</div></div>' +
+                '<span class="diag-etat ' + (classe === "inconnu" ? "inconnu" : classe) + '">' + texte + '</span></div>';
+        });
+        chaineEl.innerHTML = html;
+
+        // 3) Recent outages, rebuilt from the Kuma heartbeats
+        const incidents = reconstruirePannes(heartbeats);
+        const phraseEl = document.getElementById("diag-phrase");
+        const enCours = incidents.find(x => !x.fin);
+        if (!cause) {
+            phraseEl.className = "diag-phrase";
+            phraseEl.textContent = "All good: Internet and the VPN answer";
+        } else {
+            const depuis = enCours ? " for " + duree(Date.now() - enCours.debut) : "";
+            const local = iCause <= 2;   // switches or pfSense: the problem is at home
+            phraseEl.className = "diag-phrase " + (local || cause.cle === "nordvpn" ? "local" : "panne");
+            phraseEl.textContent = "Outage" + depuis + ": probable cause, " + cause.cause;
+        }
+        majBandeau(cause, enCours);
+
+        const listeEl = document.getElementById("diag-incidents");
+        if (journalPannes) { afficherJournal(listeEl); return; }
+        document.getElementById("diag-titre-pannes").textContent = "Recent outages (last hour)";
+        majCompte(incidents.length, incidents.some(x => !x.fin));
+        if (!incidents.length) {
+            listeEl.innerHTML = '<p class="diag-vide">No outage in the available history</p>';
+        } else {
+            listeEl.innerHTML = incidents.slice(0, 10).map(x => {
+                const fin = x.fin ? hhmm(x.fin) + " (" + duree(x.fin - x.debut) + ")" : "en cours (" + duree(Date.now() - x.debut) + ")";
+                const ordre = x.ordre.map(o => o.nom + " " + hhmmss(o.t)).join(" · ");
+                const court = x.fin && (x.fin - x.debut) < 3 * 60000;
+                return '<div class="diag-incident' + (court ? " court" : "") + '">' + jourHeure(x.debut) + " → " + fin +
+                    ' : <b>' + x.cause.nom + '</b>, ' + x.cause.cause +
+                    '<br><span class="ordre">Order of failures: ' + ordre + '</span></div>';
+            }).join("");
+        }
+        const debutHisto = Math.max(...CHAINE.map(m => (heartbeats[m.cle] || [])[0]).filter(Boolean).map(b => tempsKuma(b.time)));
+        document.getElementById("diag-fenetre").textContent = isFinite(debutHisto)
+            ? "Kuma history available since " + jourHeure(debutHisto) : "";
+    }
+
+    // ===== 30-day outage log (n8n workflow "Journal des pannes") =====
+    // If the relay /journal-pannes/ does not answer, the page keeps the outages rebuilt from Kuma (last hour).
+    // Note: the cause text (x.cause.texte) comes from the n8n workflow, in the language of that workflow.
+    let journalPannes = null;
+    const JOURNAL_URL = "/journal-pannes/";
+    async function chargerJournal() {
+        try {
+            const r = await fetch(JOURNAL_URL, { cache: "no-store" });
+            if (!r.ok) throw new Error("HTTP " + r.status);
+            const j = await r.json();
+            journalPannes = (j && Array.isArray(j.pannes)) ? j : null;
+        } catch (e) {
+            journalPannes = null;
+            console.warn("Outage log unavailable:", e);
+        }
+        const el = document.getElementById("diag-incidents");
+        if (journalPannes && el) afficherJournal(el);
+    }
+
+    function afficherJournal(listeEl) {
+        const J = journalPannes;
+        document.getElementById("diag-titre-pannes").textContent = "Outage log (30 days)";
+        majCompte(J.pannes.length, J.pannes.some(x => x.en_cours));
+        const t = (s) => new Date(s).getTime();
+        if (!J.pannes.length) {
+            listeEl.innerHTML = '<p class="diag-vide">No outage recorded</p>';
+        } else {
+            listeEl.innerHTML = J.pannes.slice(0, 20).map(x => {
+                const fin = x.fin ? hhmm(t(x.fin)) + " (" + duree(t(x.fin) - t(x.debut)) + ")" : "en cours (" + duree(Date.now() - t(x.debut)) + ")";
+                const ordre = x.ordre.map((a, k) => '<li><span class="num">' + (k + 1) + '.</span><span><b>' + a.nom + '</b> down at ' + hhmmss(t(a.tombe)) +
+                    (a.revenu ? ', back at ' + hhmmss(t(a.revenu)) : ', not back yet') + '</span></li>').join("");
+                const court = x.fin && (t(x.fin) - t(x.debut)) < 3 * 60000;
+                return '<div class="diag-incident' + (court ? " court" : "") + '">' + jourHeure(t(x.debut)) + " → " + fin +
+                    ' : <b>' + x.cause.nom + '</b>, ' + x.cause.texte +
+                    '<ul class="diag-ordre">' + ordre + '</ul></div>';
+            }).join("");
+        }
+        document.getElementById("diag-fenetre").textContent = "Log kept by n8n since " + jourHeure(t(J.depuis)) +
+            (J.maj ? " · updated at " + hhmm(t(J.maj)) : "");
+    }
+    // ----- Open / close the outage list -----
+    // Closed by default; the choice is remembered in this browser. An outage IN PROGRESS opens it by itself.
+    const CLE_OUVERT = "reseau-journal-ouvert";
+    let ouvertParPanne = false;
+    function lireChoix() { try { return localStorage.getItem(CLE_OUVERT) === "1"; } catch (e) { return false; } }
+    function ouvrirJournal(ouvrir, retenir) {
+        const b = document.getElementById("diag-bascule");
+        document.getElementById("diag-corps").hidden = !ouvrir;
+        b.setAttribute("aria-expanded", ouvrir ? "true" : "false");
+        if (retenir) { try { localStorage.setItem(CLE_OUVERT, ouvrir ? "1" : "0"); } catch (e) {} }
+    }
+    function majCompte(nb, enCours) {
+        const c = document.getElementById("diag-compte");
+        c.textContent = enCours ? "· outage in progress" : "· " + (nb ? nb + " outage" + (nb > 1 ? "s" : "") : "no outage");
+        c.classList.toggle("rouge", enCours);
+        if (enCours && !ouvertParPanne) { ouvertParPanne = true; ouvrirJournal(true, false); }
+        if (!enCours) ouvertParPanne = false;
+    }
+    ouvrirJournal(lireChoix(), false);
+    document.getElementById("diag-bascule").addEventListener("click", () => {
+        const ouvert = document.getElementById("diag-bascule").getAttribute("aria-expanded") === "true";
+        ouvrirJournal(!ouvert, true);
+    });
+
+    chargerJournal();
+    setInterval(chargerJournal, 60000);
+
+    // Replays all heartbeats of the chain in time order.
+    // An outage starts when a link goes down and ends when all of them answer again.
+    function reconstruirePannes(heartbeats) {
+        const evts = [];
+        CHAINE.forEach(m => (heartbeats[m.cle] || []).forEach(b => {
+            if (b.status === 0 || b.status === 1) evts.push({ t: tempsKuma(b.time), m, ok: b.status === 1 });
+        }));
+        evts.sort((a, b) => a.t - b.t);
+        const etat = {};
+        const pannes = [];
+        let courante = null;
+        evts.forEach(e => {
+            const avant = etat[e.m.cle];
+            etat[e.m.cle] = e.ok ? "ok" : "ko";
+            if (!e.ok && avant !== "ko") {
+                if (!courante) { courante = { debut: e.t, fin: null, ordre: [], tombes: new Set() }; pannes.push(courante); }
+                if (!courante.tombes.has(e.m.cle)) { courante.tombes.add(e.m.cle); courante.ordre.push({ nom: e.m.nom, t: e.t }); }
+            }
+            if (courante && !CHAINE.some(m => etat[m.cle] === "ko")) { courante.fin = e.t; courante = null; }
+        });
+        pannes.forEach(p => { p.cause = CHAINE.find(m => p.tombes.has(m.cle)); });   // the lowest in the chain
+        return pannes.reverse();   // newest first
+    }
+
+    // Top banner of the page
+    function majBandeau(cause, enCours) {
+        const bannerEl = document.getElementById("network-status-banner");
+        const textEl = document.getElementById("network-status-text");
+        if (!bannerEl || !textEl) return;
+        const ok = !cause;
+        textEl.textContent = ok ? "Network operational" : "Outage: " + cause.nom + (enCours ? " for " + duree(Date.now() - enCours.debut) : "");
+        bannerEl.style.color = ok ? "#00ff88" : "#ff4a4a";
+        bannerEl.style.borderColor = ok ? "#00ff88" : "#ff4a4a";
+        bannerEl.style.background = ok ? "rgba(0,255,100,.15)" : "rgba(255,74,74,.15)";
+    }
+
+    function renderHistoryBar(sensorId, barElementId, sinceElementId, heartbeats) {
+        const barEl = document.getElementById(barElementId);
+        const sinceEl = document.getElementById(sinceElementId);
+        if (!barEl) return;
+
+        // Keep the last 720 heartbeats (~24h at a 2 min interval)
+        const list = ((heartbeats && heartbeats[sensorId]) || []).slice(-720);
+
+        barEl.innerHTML = "";
+
+        list.forEach(hb => {
+            const beat = document.createElement("div");
+            beat.className = "beat " + (hb.status === 1 ? "up" : "down");
+            const time = new Date(hb.time.replace(" ", "T") + "Z");
+            beat.title = time.toLocaleString("en-CA") + " — " + (hb.status === 1 ? "Online" : "Offline");
+            barEl.appendChild(beat);
+        });
+
+        if (sinceEl && list.length > 0) {
+            const currentStatus = list[list.length - 1].status;
+            let changeIndex = list.length - 1;
+
+            for (let i = list.length - 1; i >= 0; i--) {
+                if (list[i].status !== currentStatus) break;
+                changeIndex = i;
+            }
+
+            const since = new Date(list[changeIndex].time.replace(" ", "T") + "Z");
+            const diffMs = Date.now() - since.getTime();
+            const hours = Math.floor(diffMs / 3600000);
+            const minutes = Math.floor((diffMs % 3600000) / 60000);
+            const label = currentStatus === 1 ? "Online for" : "Offline for";
+
+            sinceEl.textContent = `${label} ${hours}h${minutes.toString().padStart(2, "0")}`;
+        }
+    }
+
+    updateNetworkStatus();
+    setInterval(updateNetworkStatus, 15000);
+});
+</script>
+
+<script src="./js/clock.js"></script>
+<script src="./js/noc-cards.js"></script>
+<script src="./js/fit-page.js"></script>
+<!-- Device history (opens when you click a card of the network map) -->
+<div class="ha-fond" id="ha-fond" hidden>
+  <div class="ha-boite" role="dialog" aria-modal="true" aria-labelledby="ha-titre">
+    <div class="ha-tete">
+      <i class="fa-solid fa-clock-rotate-left" id="ha-icone"></i>
+      <h2 id="ha-titre">History</h2>
+      <button type="button" class="ha-fermer" id="ha-fermer">Close</button>
+    </div>
+    <div class="ha-boutons">
+      <button type="button" data-jours="1">1 day</button>
+      <button type="button" data-jours="3" class="actif">3 days</button>
+      <button type="button" data-jours="7">7 days</button>
+      <button type="button" data-jours="30">30 days</button>
+    </div>
+    <div class="ha-graph" id="ha-graph">Loading the history…</div>
+    <div class="ha-info" id="ha-info"></div>
+    <div class="ha-legende">
+      <span><i style="background:#00ff88"></i>Online the whole hour</span>
+      <span><i style="background:#ffc107"></i>Offline less than 5 min</span>
+      <span><i style="background:#ff3355"></i>Offline 5 min or more</span>
+      <span><i style="background:#3a4650"></i>No data</span>
+    </div>
+    <div class="ha-resume" id="ha-resume"></div>
+    <div class="ha-pannes" id="ha-pannes"></div>
+    <div class="ha-note" id="ha-note"></div>
+  </div>
+</div>
+
+<script>
+    // ===== Device history =====
+    // A click on a card of the network map opens the history of that device: one bar per hour, colored by
+    // the time offline in that hour. Source: the n8n outage log (relay /journal-pannes/, 30 days).
+    // The Kuma monitor name of each card comes from the status page "homelab".
+    (function () {
+        const HEURE = 3600 * 1000;
+        // Date your outage log started (same as DEBUT_JOURNAL in the n8n node "Mettre à jour le journal"),
+        // for example Date.parse("2026-12-01T00:00:00-05:00"). Hours before it show as "no data".
+        // null = use the first event of the log.
+        let DEBUT_JOURNAL = null;
+        const JOURS_C = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+        const fond = document.getElementById("ha-fond");
+        let jours = 3, cible = null, heures = [], minuterie = null;
+
+        const hm = (t) => { const d = new Date(t); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
+        const jourCourt = (t) => { const d = new Date(t); return JOURS_C[d.getDay()] + " " + d.getDate(); };
+        const dureeTxt = (ms) => {
+            const m = Math.max(1, Math.round(ms / 60000));
+            if (m < 60) return m + " min";
+            const h = Math.floor(m / 60), r = m % 60;
+            return h + " h" + (r ? " " + String(r).padStart(2, "0") : "");
+        };
+        const couleur = (h) => h.sansDonnee ? "#3a4650" : h.minutes === 0 ? "#00ff88" : h.minutes < 5 ? "#ffc107" : "#ff3355";
+
+        // Kuma name of the card: "kuma-12" = monitor 12; "kuma-nordvpn" = found by its name (PAR_NOM)
+        async function nomDuMoniteur(carte) {
+            const cle = carte.id.replace("kuma-", "");
+            let noms = {};
+            try {
+                const r = await fetch("/kuma-api/api/status-page/homelab");
+                const info = await r.json();
+                (info.publicGroupList || []).forEach(g => (g.monitorList || []).forEach(m => { noms[String(m.id)] = m.name; }));
+            } catch (e) { console.warn("Kuma monitor names:", e); }
+            if (/^\d+$/.test(cle)) return noms[cle] || null;
+            const ids = (typeof trouverIdsParNom === "function") ? await trouverIdsParNom() : {};
+            return ids[cle] ? (noms[ids[cle]] || null) : null;
+        }
+
+        async function lireJournal() {
+            try {
+                const r = await fetch("/journal-pannes/", { cache: "no-store" });
+                if (!r.ok) throw new Error("HTTP " + r.status);
+                return await r.json();
+            } catch (e) {
+                console.warn("Outage log unavailable:", e);
+                return null;
+            }
+        }
+
+        async function charger() {
+            const graph = document.getElementById("ha-graph");
+            const J = await lireJournal();
+            if (!J || !Array.isArray(J.pannes)) {
+                graph.textContent = "Outage log unavailable: check the n8n workflow \"Journal des pannes\" and the relay /journal-pannes/.";
+                return;
+            }
+            const maintenant = Date.now();
+            if (DEBUT_JOURNAL === null && J.depuis) DEBUT_JOURNAL = Date.parse(J.depuis);
+            // Offline periods of this device
+            const periodes = [];
+            J.pannes.forEach(p => (p.ordre || []).forEach(a => {
+                if (a.nom === cible.nom) periodes.push({ debut: Date.parse(a.tombe), fin: a.revenu ? Date.parse(a.revenu) : maintenant, enCours: !a.revenu });
+            }));
+            // One box per hour, from the first hour of the period until now
+            const fin = new Date(maintenant); fin.setMinutes(0, 0, 0);
+            const debut = fin.getTime() - (jours * 24 - 1) * HEURE;
+            heures = [];
+            for (let h0 = debut; h0 <= fin.getTime(); h0 += HEURE) {
+                const h1 = Math.min(h0 + HEURE, maintenant);
+                let ms = 0;
+                const morceaux = [];
+                periodes.forEach(p => {
+                    const a = Math.max(p.debut, h0), b = Math.min(p.fin, h1);
+                    if (b > a) { ms += b - a; morceaux.push(p); }
+                });
+                heures.push({ t: h0, minutes: Math.round(ms / 60000), ms: ms, pannes: morceaux, sansDonnee: h1 <= DEBUT_JOURNAL });
+            }
+            const dansPeriode = periodes.filter(p => p.fin > debut).sort((a, b) => b.debut - a.debut);
+            dessiner(dansPeriode, J);
+        }
+
+        function dessiner(pannes, J) {
+            const graph = document.getElementById("ha-graph");
+            const info = document.getElementById("ha-info");
+            const H = heures;
+            if (!H.length) return;
+            const W = Math.max(300, Math.round(graph.clientWidth || 600)), Hh = 10, B = 52, haut = W > 700 ? 150 : 120, Ht = haut + Hh + B, G = 8, D = 8;
+            const n = H.length, pasX = (W - G - D) / n;
+            const xg = (t) => G + (t - H[0].t) / HEURE * pasX;
+            const bas = Hh + haut;
+            let s = '<svg viewBox="0 0 ' + W + ' ' + Ht + '" role="img" aria-label="History of ' + cible.nom + ', ' + jours + ' day(s), one bar per hour">';
+            // Scale: hours (1, 3 and 7 days), otherwise only the days
+            if (jours <= 7) {
+                const intervalle = jours <= 1 ? (W < 500 ? 3 : 2) : jours <= 3 ? (W < 500 ? 12 : 6) : (W < 500 ? 24 : 12);
+                for (let i = 0; i < n; i++) {
+                    const d = new Date(H[i].t);
+                    if (d.getHours() % intervalle !== 0) continue;
+                    const minuit = d.getHours() === 0;
+                    s += '<line x1="' + xg(H[i].t) + '" x2="' + xg(H[i].t) + '" y1="' + Hh + '" y2="' + (bas + 5) + '" stroke="' + (minuit ? "rgba(0,238,255,.45)" : "rgba(255,255,255,.10)") + '"/>';
+                    s += '<text x="' + xg(H[i].t) + '" y="' + (bas + 19) + '" text-anchor="middle" font-size="13" fill="#cfe3ee">' + d.getHours() + ' h</text>';
+                }
+            }
+            // Day name under the scale, in the middle of each visible day
+            const j0 = new Date(H[0].t); j0.setHours(0, 0, 0, 0);
+            const finAxe = H[0].t + n * HEURE;
+            const pasJours = jours >= 30 ? (W < 500 ? 7 : 3) : 1;
+            let k = 0;
+            for (let d = j0.getTime(); d < finAxe; d += 24 * HEURE, k++) {
+                const a = Math.max(d, H[0].t), b = Math.min(d + 24 * HEURE, finAxe);
+                if (jours < 30 && (b - a) / HEURE < (W < 500 ? 8 : 5)) continue;
+                if (jours >= 30 && k % pasJours !== 0) continue;
+                s += '<text x="' + ((xg(a) + xg(b)) / 2) + '" y="' + (bas + (jours <= 7 ? 40 : 22)) + '" text-anchor="middle" font-size="14" font-weight="700" fill="#00eaff">' + jourCourt(d) + '</text>';
+                if (jours >= 30) s += '<line x1="' + xg(d) + '" x2="' + xg(d) + '" y1="' + Hh + '" y2="' + (bas + 5) + '" stroke="rgba(0,238,255,.30)"/>';
+            }
+            // Bars: full height, color by the time offline in the hour
+            const largeur = Math.max(1, pasX * (pasX > 4 ? 0.72 : 0.92));
+            H.forEach(h => {
+                s += '<rect x="' + (xg(h.t) + (pasX - largeur) / 2) + '" y="' + Hh + '" width="' + largeur + '" height="' + haut + '" rx="' + Math.min(2, largeur / 3) + '" fill="' + couleur(h) + '"' + (h.minutes === 0 && !h.sansDonnee ? ' opacity=".55"' : '') + '/>';
+            });
+            s += '<rect id="ha-repere" x="0" y="' + (Hh - 3) + '" width="' + Math.max(pasX, 3) + '" height="' + (haut + 6) + '" fill="none" stroke="#ffffff" stroke-width="2" opacity="0"/>';
+            s += '</svg>';
+            graph.innerHTML = s;
+
+            // Summary of the period (only the hours with data)
+            const avecDonnee = H.filter(h => !h.sansDonnee);
+            const totalMs = avecDonnee.reduce((a, h) => a + h.ms, 0);
+            const dureeObs = avecDonnee.length ? Math.min(Date.now(), H[H.length - 1].t + HEURE) - Math.max(avecDonnee[0].t, DEBUT_JOURNAL) : 0;
+            const dispo = dureeObs > 0 ? Math.max(0, 100 - totalMs / dureeObs * 100) : null;
+            const plusLongue = pannes.reduce((m, p) => Math.max(m, p.fin - p.debut), 0);
+            document.getElementById("ha-resume").innerHTML =
+                '<span>Availability <b style="color:' + (dispo === null ? "#e8f6ff" : dispo >= 99.9 ? "#00ff88" : dispo >= 99 ? "#ffc107" : "#ff3355") + '">' + (dispo === null ? "--" : dispo.toFixed(2) + " %") + '</b></span>' +
+                '<span>Outages <b>' + pannes.length + '</b></span>' +
+                '<span>Time offline <b>' + (totalMs ? dureeTxt(totalMs) : "0 min") + '</b></span>' +
+                (pannes.length ? '<span>Longest <b>' + dureeTxt(plusLongue) + '</b></span>' : '');
+
+            // Outages of the period (the 10 most recent)
+            document.getElementById("ha-pannes").innerHTML = pannes.length
+                ? '<h3>Outages in this period</h3><ul>' + pannes.slice(0, 10).map(p =>
+                    '<li>' + jourCourt(p.debut) + ', ' + hm(p.debut) + ' → ' + (p.enCours ? '<b style="color:#ff3355">in progress</b>' : hm(p.fin)) + ' (' + dureeTxt(p.fin - p.debut) + ')</li>').join("") +
+                  '</ul>' + (pannes.length > 10 ? '<p>… and ' + (pannes.length - 10) + ' more</p>' : '')
+                : '<h3>Outages in this period</h3><p>No outage recorded for this device.</p>';
+
+            const notes = [];
+            if (DEBUT_JOURNAL && H[0].t < DEBUT_JOURNAL) notes.push("The outage log starts on " + new Date(DEBUT_JOURNAL).toLocaleString("en-CA", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) + ": no data before that.");
+            if (J.nb_pannes > J.pannes.length) notes.push("The log only returns the last " + J.pannes.length + " outages: older ones may be missing.");
+            notes.push("The log is updated every 5 minutes.");
+            document.getElementById("ha-note").textContent = notes.join(" ");
+            info.textContent = "Slide over the bars to read an hour";
+
+            const svg = graph.querySelector("svg");
+            const repere = svg.querySelector("#ha-repere");
+            const montrer = (ev) => {
+                const r = svg.getBoundingClientRect();
+                const cx = ((ev.touches ? ev.touches[0].clientX : ev.clientX) - r.left) / r.width * W;
+                const i = Math.max(0, Math.min(n - 1, Math.floor((cx - G) / pasX)));
+                const h = H[i];
+                repere.setAttribute("x", xg(h.t) + pasX / 2 - Math.max(pasX, 3) / 2); repere.setAttribute("opacity", "1");
+                const d = new Date(h.t);
+                let txt = jourCourt(h.t) + ", " + d.getHours() + " h to " + ((d.getHours() + 1) % 24) + " h: ";
+                if (h.sansDonnee) txt += "no data";
+                else if (!h.minutes && !h.ms) txt += '<b style="color:#00ff88">online the whole hour</b>';
+                else txt += '<b style="color:' + couleur(h) + '">offline ' + (h.minutes ? h.minutes + " min" : "less than a minute") + '</b> (' +
+                    h.pannes.map(p => hm(p.debut) + " to " + (p.enCours ? "now" : hm(p.fin))).join(", ") + ")";
+                info.innerHTML = txt;
+            };
+            svg.addEventListener("mousemove", montrer);
+            svg.addEventListener("touchstart", montrer, { passive: true });
+            svg.addEventListener("touchmove", montrer, { passive: true });
+        }
+
+        async function ouvrir(carte) {
+            const titre = carte.querySelector("h3") ? carte.querySelector("h3").textContent.trim() : carte.id;
+            const icone = carte.querySelector("i");
+            document.getElementById("ha-titre").textContent = "History: " + titre;
+            document.getElementById("ha-icone").className = icone ? icone.className : "fa-solid fa-clock-rotate-left";
+            ["ha-info", "ha-resume", "ha-pannes", "ha-note"].forEach(id => { document.getElementById(id).innerHTML = ""; });
+            document.getElementById("ha-graph").textContent = "Loading the history…";
+            fond.hidden = false;
+            document.body.style.overflow = "hidden";
+            const nom = await nomDuMoniteur(carte);
+            if (!nom) {
+                document.getElementById("ha-graph").textContent = "No Kuma monitor found for this card: it must be on the status page \"homelab\".";
+                return;
+            }
+            cible = { nom: nom };
+            document.getElementById("ha-titre").textContent = "History: " + titre + (nom !== titre ? " · monitor " + nom : "");
+            await charger();
+            clearInterval(minuterie);
+            minuterie = setInterval(() => { if (!document.hidden && !fond.hidden) charger(); }, 5 * 60 * 1000);
+        }
+
+        function fermer() {
+            fond.hidden = true;
+            document.body.style.overflow = "";
+            clearInterval(minuterie);
+            cible = null;
+        }
+
+        document.querySelectorAll(".network-map .network-device[id^='kuma-']").forEach(carte => {
+            carte.title = "Tap for the history";
+            carte.setAttribute("tabindex", "0");
+            carte.addEventListener("click", () => ouvrir(carte));
+            carte.addEventListener("keydown", (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ouvrir(carte); } });
+        });
+        document.getElementById("ha-fermer").addEventListener("click", fermer);
+        fond.addEventListener("click", (ev) => { if (ev.target === fond) fermer(); });
+        document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && !fond.hidden) fermer(); });
+        document.querySelectorAll(".ha-boutons button").forEach(b => b.addEventListener("click", () => {
+            jours = Number(b.dataset.jours);
+            document.querySelectorAll(".ha-boutons button").forEach(o => o.classList.toggle("actif", o === b));
+            document.getElementById("ha-graph").textContent = "Loading the history…";
+            if (cible) charger();
+        }));
+        window.addEventListener("resize", () => { if (!fond.hidden && cible && heures.length) charger(); });
+    })();
+</script>
+
+</body>
+
+</html>

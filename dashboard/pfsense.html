@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<!-- pfsense.html : v2026.11.17-4 : English version (MY HOMELAB starter kit). pfSense page: system, NVMe disk, gateways, interfaces, services, firewall and Snort (Loki) -->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>pfSense HomeLab</title>
+<link rel="stylesheet" href="./css/style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+<style>
+.vm-status{display:flex;align-items:center;gap:10px;font-weight:bold;}
+.dot{height:14px;width:14px;border-radius:50%;display:inline-block;flex:none;}
+.online-dot{background:#00ff88;box-shadow:0 0 15px #00ff88;}
+.warning-dot{background:#ffc107;box-shadow:0 0 15px #ffc107;}
+.offline-dot{background:#ff4d4d;box-shadow:0 0 15px #ff4d4d;}
+.progress{height:12px;background:#111;border-radius:10px;overflow:hidden;margin-top:10px;}
+.progress span{height:100%;display:block;background:linear-gradient(90deg,#00eaff,#00ff88);}
+.progress span.warn{background:#ffc107;}
+.progress span.crit{background:#ff4d4d;}
+.online.degraded{color:#ffc107;}
+.online.down{color:#ff4d4d;}
+.rows{display:grid;gap:10px;}
+.row{display:grid;grid-template-columns:minmax(120px,1fr) 90px 1fr 1fr;gap:12px;align-items:center;font-size:1rem;}
+.row.head{font-weight:bold;}
+.chips{display:flex;flex-wrap:wrap;gap:12px;}
+.chip{display:flex;align-items:center;gap:8px;padding:8px 14px;border:1px solid rgba(0,238,255,.3);border-radius:10px;font-size:1rem;}
+.bar{height:12px;background:#111;border-radius:10px;overflow:hidden;}
+.bar span{display:block;height:100%;background:#ff4d4d;}
+.updated{text-align:center;font-size:1rem;margin:20px 0;}
+.activity p{font-size:1rem;}
+.watchbox{background:rgba(255,193,7,.08);border:1px solid #ffc107;border-left:6px solid #ffc107;border-radius:14px;padding:16px 18px;margin-bottom:20px;}
+.watchbox.ok{background:rgba(0,255,136,.07);border-color:#00ff88;}
+.watchhead{display:flex;align-items:center;gap:12px;margin-bottom:8px;}
+.watchhead i{color:#ffc107;font-size:1.3rem;}
+.watchbox.ok .watchhead i{color:#00ff88;}
+.watchhead h3{font-family:'Orbitron',sans-serif;font-size:1.1rem;color:#fff;margin:0;flex:1;}
+.watchsum{font-size:1.1rem;color:#fff;font-weight:bold;margin-bottom:12px;}
+.wtable{display:grid;gap:0;max-height:300px;overflow-y:auto;}
+.wrow{display:grid;grid-template-columns:170px 130px 110px minmax(0,1fr) 130px;gap:12px;padding:6px 0;border-top:1px solid rgba(255,255,255,.12);font-size:1rem;color:#fff;align-items:center;}
+.wrow.whead{font-weight:bold;color:#ffc107;border-top:none;position:sticky;top:0;background:#12181d;}
+.wip{font-weight:bold;}
+.wwhy{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.wlink{color:#fff;text-decoration:underline;font-weight:bold;white-space:nowrap;}
+.wlink:hover{color:#ffc107;}
+.wbtn{cursor:pointer;background:transparent;font-size:1rem;font-family:inherit;}
+@media (max-width:760px){.wrow{grid-template-columns:1fr 1fr;}.wrow.whead{display:none;}}
+.tgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:18px;}
+.tbox{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);border-radius:14px;padding:16px;min-width:0;}
+.tbox h3{font-family:'Orbitron',sans-serif;font-size:1rem;color:#fff;margin-bottom:12px;}
+.tbox h3 i{color:#00ff88;margin-right:8px;}
+.trow{display:grid;grid-template-columns:minmax(0,1fr) 64px 48px;gap:10px;align-items:center;padding:5px 0;font-size:1rem;color:#fff;}
+.trow.wide{grid-template-columns:minmax(0,1.9fr) 48px 36px;}
+.trow .bar{margin-top:0;height:10px;}
+.tlabel{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.tcount{text-align:right;font-weight:bold;}
+.tempty{font-size:1rem;color:#fff;padding:6px 0;}
+.lokifoot{display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin-top:18px;font-size:1rem;}
+.gbtn{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border:1px solid #00ff88;border-radius:10px;color:#00ff88;text-decoration:none;font-weight:bold;}
+.gbtn:hover{background:rgba(0,255,136,.12);}
+.lokierr{display:flex;align-items:center;gap:10px;font-size:1rem;color:#fff;padding:6px 0;}
+</style>
+<style id="zoom-mobile">@media (max-width:900px){html{zoom:0.9}}</style>
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+</head>
+
+<body class="compact-cards">
+<div class="background"></div>
+<div class="overlay"></div>
+
+<header>
+<div class="logo"><i class="fa-solid fa-layer-group"></i> PROXMOX LAB</div>
+<nav>
+<a href="/index.html"><i class="fa-solid fa-gauge"></i> Dashboard</a>
+<a href="/documentation.html"><i class="fa-solid fa-book"></i> Documentation</a>
+<a href="/journal.html"><i class="fa-solid fa-clock-rotate-left"></i> Journal</a>
+<a href="/reseau.html"><i class="fa-solid fa-network-wired"></i> Network</a>
+<a href="/supervision.html"><i class="fa-solid fa-eye"></i> Supervision</a>
+<a href="/proxmox.html"><i class="fa-solid fa-layer-group"></i> Proxmox</a>
+<a class="active" href="/pfsense.html"><i class="fa-solid fa-shield-halved"></i> pfSense</a>
+</nav>
+<div class="time">
+<i class="fa-regular fa-clock"></i>
+<span id="clock">00:00:00</span>
+</div>
+
+</header>
+
+<main>
+<section class="hero">
+<h1>PFSENSE FIREWALL CENTER</h1>
+<p>Netgate 4200</p>
+<div class="online" id="status"><i class="fa-solid fa-circle"></i> <span>Connecting to pfSense...</span></div>
+</section>
+
+<section class="panel">
+<h2><i class="fa-solid fa-microchip"></i> System</h2>
+<section class="cards" id="system"></section>
+</section>
+
+<section class="panel">
+<h2><i class="fa-solid fa-globe"></i> Gateways</h2>
+<section class="cards" id="gateways"></section>
+</section>
+
+<section class="panel">
+<h2><i class="fa-solid fa-network-wired"></i> Interfaces</h2>
+<div class="rows" id="interfaces"></div>
+</section>
+
+<section class="panel">
+<h2><i class="fa-solid fa-gears"></i> Services</h2>
+<div class="chips" id="services"></div>
+</section>
+
+<section class="panel">
+<h2><i class="fa-solid fa-fire"></i> Firewall and Snort (24 h)</h2>
+<div id="loki-watch"></div>
+<section class="cards" id="loki-cards"></section>
+<div class="tgrid" id="loki-lists"></div>
+<div class="lokifoot" id="loki-foot"></div>
+<div class="activity" id="firewall"></div>
+</section>
+
+<p class="updated" id="updated"></p>
+</main>
+
+<footer>MY HOMELAB © 2026</footer>
+
+<script>
+const REFRESH_MS = 30000;
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const gb = b => (b / 1073741824).toFixed(1);
+const lvl = (v, w, c) => v >= c ? 'crit' : v >= w ? 'warn' : '';
+
+async function api(p) {
+  const r = await fetch('/pfs-api/' + p, { cache: 'no-store' });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return (await r.json()).data;
+}
+
+function uptime(s) {
+  const m = String(s).match(/(\d+)\s*Day.*?(\d+)\s*Hour/i);
+  return m ? m[1] + ' j ' + m[2] + ' h' : String(s);
+}
+
+function gauge(icon, title, text, pct, cls, detail) {
+  return '<div class="card"><i class="fa-solid ' + icon + '"></i><h2>' + esc(title) + '</h2>' +
+    '<div class="number">' + esc(text) + '</div>' +
+    '<div class="progress"><span class="' + cls + '" style="width:' + Math.min(100, Math.max(0, pct)) + '%"></span></div>' +
+    (detail ? '<p>' + esc(detail) + '</p>' : '') + '</div>';
+}
+
+function systemCards(s) {
+  if (!s) return '<p>System unavailable.</p>';
+  return '<div class="card"><i class="fa-solid fa-shield-halved"></i><h2>pfSense</h2>' +
+    '<div class="vm-status"><span class="dot online-dot"></span>ONLINE</div>' +
+    '<p>' + esc(s.platform || '') + '</p><p>Uptime: ' + esc(uptime(s.uptime)) + '</p></div>' +
+    gauge('fa-microchip', 'CPU', s.cpu_usage.toFixed(0) + '%', s.cpu_usage, lvl(s.cpu_usage, 75, 90), s.cpu_count + ' cores') +
+    gauge('fa-memory', 'RAM', s.mem_usage + '%', s.mem_usage, lvl(s.mem_usage, 75, 90), 'Swap: ' + s.swap_usage + '%') +
+    gauge('fa-temperature-half', 'TEMPERATURE', s.temp_c + '°C', s.temp_c, lvl(s.temp_c, 65, 75), 'Disk: ' + s.disk_usage + '%') +
+    nvmeCard();
+}
+
+// ---- NVMe disk: sent every hour to Loki by the script /root/nvme-sante.sh (syslog tag "nvmesante") ----
+const NVME_REFRESH_MS = 600000;   // 10 minutes
+const NVME_MAX_HEURES = 3;        // older data = cron stopped?
+let nvme = null, nvmeErreur = '';
+
+async function loadNvme() {
+  try {
+    const fin = Date.now() * 1e6, debut = fin - 26 * 3600 * 1e9;
+    const url = '/loki-api/loki/api/v1/query_range?query=' + encodeURIComponent('{app="nvmesante"}') +
+      '&start=' + debut + '&end=' + fin + '&limit=1&direction=backward';
+    const r = await fetch(url, { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+    const v = (((j.data || {}).result || [])[0] || {}).values;
+    if (!v || !v.length) { nvme = null; nvmeErreur = 'no data for 26 h'; }
+    else {
+      const ligne = String(v[0][1]);
+      nvme = JSON.parse(ligne.slice(ligne.indexOf('{')));
+      nvme.recu = Number(v[0][0]) / 1e6;
+      nvmeErreur = '';
+    }
+  } catch (e) { nvmeErreur = e.message; }
+  if (lastR) $('system').innerHTML = systemCards(lastR.system);
+}
+
+function nvmeCard() {
+  const tete = '<div class="card"><i class="fa-solid fa-hard-drive"></i><h2>NVMe DISK</h2>';
+  if (!nvme) return tete + '<div class="number">--</div><p>' + esc(nvmeErreur ? 'Waiting: ' + nvmeErreur : 'Loading…') + '</p><p>Script nvme-sante.sh on pfSense</p></div>';
+  const n = nvme;
+  let cls = lvl(n.usure_pct || 0, 70, 90);
+  if (n.smart_ok === false || n.erreurs_media > 0 || n.zfs_etat !== 'ONLINE' || (n.reserve_pct !== null && n.reserve_pct <= 20)) cls = 'crit';
+  else if (n.temp_c >= 70 && cls !== 'crit') cls = 'warn';
+  const vieux = (Date.now() - n.recu) / 3600000 > NVME_MAX_HEURES;
+  const lignes = [
+    'SMART ' + (n.smart_ok ? 'OK' : 'FAILED') + ' · ' + n.temp_c + ' °C · spare ' + n.reserve_pct + ' %',
+    'ZFS ' + n.zfs_etat + ' · ' + n.zfs_utilise + ' / ' + n.zfs_taille + ' (' + n.zfs_pct + ' %)',
+    'Written: ' + n.ecrit_to + ' TB · ' + n.erreurs_media + ' error(s)'
+  ];
+  if (vieux) lignes.unshift('Data from ' + new Date(n.recu).toLocaleString('en-CA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) + ' (cron stopped?)');
+  return tete + '<div class="number">' + esc(n.usure_pct) + ' % used</div>' +
+    '<div class="progress"><span class="' + (vieux && !cls ? 'warn' : cls) + '" style="width:' + Math.min(100, Math.max(2, n.usure_pct || 0)) + '%"></span></div>' +
+    lignes.map(l => '<p>' + esc(l) + '</p>').join('') + '</div>';
+}
+
+function gatewayCards(g) {
+  if (!g) return '<p>Gateways unavailable.</p>';
+  return g.map(x => {
+    const ok = x.status === 'online';
+    const dot = ok ? (x.loss > 0 ? 'warning-dot' : 'online-dot') : 'offline-dot';
+    return '<div class="card"><i class="fa-solid fa-globe"></i><h2>' + esc(x.name) + '</h2>' +
+      '<div class="vm-status"><span class="dot ' + dot + '"></span>' + esc(String(x.status).toUpperCase()) + '</div>' +
+      '<p>Latency: ' + Number(x.delay).toFixed(1) + ' ms</p><p>Loss: ' + x.loss + ' %</p></div>';
+  }).join('');
+}
+
+function interfaceRows(list) {
+  if (!list) return '<p>Interfaces unavailable.</p>';
+  let h = '<div class="row head"><span>Interface</span><span>State</span><span>Received</span><span>Sent</span></div>';
+  list.forEach(i => {
+    const ok = i.status === 'up';
+    h += '<div class="row"><span>' + esc(i.descr || i.name) + '</span>' +
+      '<span class="vm-status"><span class="dot ' + (ok ? 'online-dot' : 'offline-dot') + '"></span>' + (ok ? 'UP' : 'DOWN') + '</span>' +
+      '<span>' + gb(i.inbytes) + ' GB</span><span>' + gb(i.outbytes) + ' GB</span></div>';
+  });
+  return h;
+}
+
+function serviceChips(list) {
+  if (!list) return '<p>Services unavailable.</p>';
+  return list.map(s => {
+    const ok = s.status === true || s.status === 'running';
+    return '<div class="chip"><span class="dot ' + (ok ? 'online-dot' : (s.enabled ? 'offline-dot' : 'warning-dot')) + '"></span>' + esc(s.name) + '</div>';
+  }).join('');
+}
+
+function firewallPanel(log, ifaces, leases) {
+  if (!log) return '<p>Log unavailable.</p>';
+  const hw = {};
+  (ifaces || []).forEach(i => { hw[i.hwif] = i.descr || i.name; });
+  const cnt = {};
+  let blocks = 0, total = 0;
+  log.forEach(e => {
+    const t = String(e.text).split(']: ').pop().split(',');
+    if (t.length < 7) return;
+    total++;
+    if (t[6] !== 'block') return;
+    blocks++;
+    const n = hw[t[4]] || t[4];
+    cnt[n] = (cnt[n] || 0) + 1;
+  });
+  const top = Object.entries(cnt).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const max = top.length ? top[0][1] : 1;
+  let h = '<p>' + blocks + ' blocks in the last ' + total + ' log entries</p>';
+  if (log.length) h += '<p>Last entry: ' + esc(String(log[0].text).slice(0, 15)) + '</p>';
+  h += top.map(([n, c]) => '<div class="row" style="grid-template-columns:140px 1fr 50px"><span>' + esc(n) +
+    '</span><div class="bar"><span style="width:' + Math.round(c / max * 100) + '%"></span></div><span>' + c + '</span></div>').join('');
+  if (leases) h += '<p>DHCP leases: ' + leases.length + '</p>';
+  return h;
+}
+
+
+// ---- Firewall and Snort read from Loki (Nginx relay /loki-api/, read only) ----
+const LOKI_REFRESH_MS = 300000;   // 5 minutes
+const GRAFANA_URL = 'http://192.168.100.15:3000/d/pfsense-loki/pfsense-pare-feu-et-snort';   // <- your Grafana dashboard
+// Same thresholds as SEUIL in the n8n node check_pfsense_logs (keep them identical)
+const SURV = { ports: 15, tentatives: 50, recurrente: 10, maxIp: 30 };
+const LFL = '{job="syslog", app="filterlog"}';
+const LSN = '{job="syslog", app="snort"}';
+const LWAN = ' |= ",igc3,match,block,in,"';
+const LSYN = ' |~ ",tcp,[0-9]+,[0-9.]+,[0-9.]+,[0-9]+,[0-9]+,[0-9]+,S,"';
+const LRE_SYN = ' | regexp `^(?:[^,]*,){8}4,(?:[^,]*,){7}tcp,[^,]*,(?P<src>[^,]*),[^,]*,[^,]*,(?P<dport>[^,]*),[^,]*,S,`';
+const LRE_IFACE = ' | regexp `^(?:[^,]*,){4}(?P<iface>[^,]*),[^,]*,(?P<action>[^,]*),`';
+const LRE_SNORT = ' | regexp `\\[[0-9]+:[0-9]+:[0-9]+\\] (?P<msg>.*?) (?:\\[Classification: [^\\]]*\\] )?\\[Priority: [0-9]\\]`';
+
+let lastR = null, lokiOk = false, lokiStarted = false, nvmeStarted = false;
+
+async function lq(expr) {
+  const r = await fetch('/loki-api/loki/api/v1/query?query=' + encodeURIComponent(expr), { cache: 'no-store' });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const j = await r.json();
+  if (j.status !== 'success') throw new Error('invalid Loki response');
+  return j.data.result;
+}
+// Ports: Loki limits to 500 series per query, so the SYN lines (24 h) are read and counted here
+async function lignesSyn() {
+  const fin = Date.now() * 1e6, debut = fin - 24 * 3600 * 1e9;
+  const q = LFL + LWAN + LSYN;
+  const url = '/loki-api/loki/api/v1/query_range?query=' + encodeURIComponent(q) + '&start=' + debut + '&end=' + fin + '&limit=5000&direction=backward';
+  const r = await fetch(url, { cache: 'no-store' });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const j = await r.json();
+  if (j.status !== 'success') throw new Error('invalid Loki response');
+  const parPort = {}, portsIp = {};
+  (j.data.result || []).forEach(f => (f.values || []).forEach(v => {
+    const c = String(v[1]).split(',');
+    if (c[8] !== '4' || c[16] !== 'tcp' || !c[18] || !c[21]) return;
+    parPort[c[21]] = (parPort[c[21]] || 0) + 1;
+    (portsIp[c[18]] = portsIp[c[18]] || new Set()).add(c[21]);
+  }));
+  return { parPort, portsIp };
+}
+const lcount = (sel, filt, win) => 'sum(count_over_time(' + sel + filt + ' [' + win + '])) or vector(0)';
+async function lnum(expr) {
+  const r = await lq(expr);
+  return r.length ? Math.round(Number(r[0].value[1])) : 0;
+}
+async function ltop(expr, key, max) {
+  const r = await lq(expr);
+  return r.filter(x => x.metric && x.metric[key])
+    .map(x => ({ k: x.metric[key], n: Math.round(Number(x.value[1])) }))
+    .sort((a, b) => b.n - a.n).slice(0, max || 5);
+}
+
+function statCard(icon, title, value, sub) {
+  return '<div class="card"><i class="fa-solid ' + icon + '"></i><h2>' + esc(title) + '</h2>' +
+    '<div class="number">' + value.toLocaleString('en-CA') + '</div><p>' + esc(sub) + '</p></div>';
+}
+
+function topBox(title, icon, items, color, wide, label) {
+  const max = items.length ? items[0].n : 1;
+  const rows = items.length
+    ? items.map(it => '<div class="trow' + (wide ? ' wide' : '') + '"><span class="tlabel" title="' + esc(it.k) + '">' +
+        esc(label ? label(it.k) : it.k) + '</span><div class="bar"><span style="width:' + Math.max(4, Math.round(it.n / max * 100)) +
+        '%;background:' + color + '"></span></div><span class="tcount">' + it.n.toLocaleString('en-CA') + '</span></div>').join('')
+    : '<p class="tempty">No data over 24 h</p>';
+  return '<div class="tbox"><h3><i class="fa-solid ' + icon + '"></i>' + esc(title) + '</h3>' + rows + '</div>';
+}
+
+function copyText(text, btn) {
+  const done = () => {
+    const old = btn.innerHTML;
+    btn.innerHTML = '<i class="fa-solid fa-check"></i> Copied';
+    setTimeout(() => { btn.innerHTML = old; }, 1500);
+  };
+  if (navigator.clipboard && window.isSecureContext) { navigator.clipboard.writeText(text).then(done); return; }
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); done(); } catch (e) { /* copy not possible */ }
+  document.body.removeChild(ta);
+}
+
+function renderWatch(list) {
+  if (!list.length) {
+    return '<div class="watchbox ok"><div class="watchhead"><i class="fa-solid fa-shield-halved"></i><h3>Attacks to watch</h3></div>' +
+      '<p class="watchsum">No external IP to watch over 24 h.</p></div>';
+  }
+  list.sort((a, b) => b.ports - a.ports || b.n - a.n);
+  const best = list[0];
+  const quoi = best.ports >= SURV.ports ? 'scanning ' + best.ports + ' different ports' : 'with ' + best.n + ' attempts';
+  const sum = list.length + ' external IP' + (list.length > 1 ? 's' : '') + ' to watch, including ' + best.ip + ' ' + quoi + '.';
+  const rows = list.map(x => {
+    const url = 'https://www.abuseipdb.com/check/' + encodeURIComponent(x.ip);
+    return '<div class="wrow"><span class="wip">' + esc(x.ip) + '</span><span>' + x.n + ' attempts</span><span>' + x.ports + ' ports</span>' +
+      '<span class="wwhy" title="' + esc(x.motifs.join(' · ')) + '">' + esc(x.motifs.join(' · ')) + '</span>' +
+      '<a class="wlink" href="' + url + '" target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-arrow-up-right-from-square"></i> AbuseIPDB</a></div>';
+  }).join('');
+  return '<div class="watchbox"><div class="watchhead"><i class="fa-solid fa-user-secret"></i><h3>Attacks to watch</h3>' +
+    '<button class="gbtn wbtn" id="copyips" type="button"><i class="fa-regular fa-copy"></i> Copy the IPs</button></div>' +
+    '<p class="watchsum">' + esc(sum) + '</p>' +
+    '<div class="wtable"><div class="wrow whead"><span>IP address</span><span>Attempts</span><span>Ports</span><span>Why</span><span>Check</span></div>' + rows + '</div></div>';
+}
+
+function renderFirewallZone() {
+  if (!lastR) return;
+  $('firewall').innerHTML = lokiOk
+    ? (lastR.leases ? '<p>DHCP leases: ' + lastR.leases.length + '</p>' : '')
+    : firewallPanel(lastR.log, lastR.interfaces, lastR.leases);
+}
+
+async function loadLoki() {
+  try {
+    const [wan, syn, snort, h1, scanners, lignes, sigs, ifaces] = await Promise.all([
+      lnum(lcount(LFL, LWAN, '24h')),
+      lnum(lcount(LFL, LWAN + LSYN, '24h')),
+      lnum(lcount(LSN, '', '24h')),
+      lnum(lcount(LFL, '', '1h')),
+      ltop('topk(' + SURV.maxIp + ', sum by (src) (count_over_time(' + LFL + LWAN + LRE_SYN + ' | src!="" [24h])))', 'src', SURV.maxIp),
+      lignesSyn().catch(() => ({ parPort: {}, portsIp: {} })),
+      ltop('topk(5, sum by (msg) (count_over_time(' + LSN + LRE_SNORT + ' | msg!="" [24h])))', 'msg', 5),
+      ltop('topk(5, sum by (iface) (count_over_time(' + LFL + LRE_IFACE + ' | action="block" [24h])))', 'iface', 5)
+    ]);
+
+    const ports = Object.keys(lignes.parPort).map(p => ({ k: p, n: lignes.parPort[p] })).sort((a, b) => b.n - a.n).slice(0, 5);
+
+    // Details of the most active IPs: number of different ports, seen before?
+    const portsParIp = {}, avantParIp = {};
+    if (scanners.length) {
+      const motif = scanners.map(x => x.k.replace(/\./g, '[.]')).join('|');
+      const filtre = ' | src=~`' + motif + '`';
+      const [av] = await Promise.all([
+        ltop('sum by (src) (count_over_time(' + LFL + LWAN + LRE_SYN + ' | src!=""' + filtre + ' [7d] offset 24h))', 'src', SURV.maxIp)
+      ]);
+      scanners.forEach(x => { if (lignes.portsIp[x.k]) portsParIp[x.k] = lignes.portsIp[x.k].size; });
+      av.forEach(x => { avantParIp[x.k] = x.n; });
+    }
+    const watch = scanners.map(x => {
+      const p = portsParIp[x.k] || 0, avant = avantParIp[x.k] || 0, motifs = [];
+      if (p >= SURV.ports) motifs.push('scan of ' + p + ' ports');
+      if (avant > 0 && x.n >= SURV.recurrente) motifs.push('seen on previous days');
+      if (x.n >= SURV.tentatives) motifs.push('very active');
+      return { ip: x.k, n: x.n, ports: p, motifs: motifs };
+    }).filter(x => x.motifs.length);
+
+    const hw = {};
+    ((lastR && lastR.interfaces) || []).forEach(i => { hw[i.hwif] = i.descr || i.name; });
+
+    $('loki-watch').innerHTML = renderWatch(watch);
+    const cb = $('copyips');
+    if (cb) cb.onclick = () => copyText(watch.map(x => x.ip).join('\n'), cb);
+
+    const actif = h1 > 0;
+    $('loki-cards').innerHTML =
+      statCard('fa-ban', 'WAN blocks', wan, 'blocked incoming connections') +
+      statCard('fa-magnifying-glass', 'SYN scans', syn, 'TCP probes on the WAN') +
+      statCard('fa-triangle-exclamation', 'Snort alerts', snort, 'over 24 hours') +
+      '<div class="card"><i class="fa-solid fa-database"></i><h2>Log reception</h2>' +
+      '<div class="vm-status"><span class="dot ' + (actif ? 'online-dot' : 'offline-dot') + '"></span>' + (actif ? 'ACTIVE' : 'STOPPED') + '</div>' +
+      '<p>' + h1.toLocaleString('en-CA') + ' logs in the last hour</p></div>';
+
+    $('loki-lists').innerHTML =
+      topBox('Most active IPs', 'fa-user-secret', scanners.slice(0, 5), '#ff4d4d', false) +
+      topBox('Targeted ports', 'fa-door-open', ports, '#ffc107', false, k => 'Port ' + k) +
+      topBox('Snort alerts', 'fa-shield-virus', sigs, '#ffc107', true) +
+      topBox('Blocks by interface', 'fa-network-wired', ifaces, '#ff4d4d', false, k => hw[k] || k);
+
+    $('loki-foot').innerHTML =
+      '<a class="gbtn" href="' + GRAFANA_URL + '" target="_blank" rel="noopener"><i class="fa-solid fa-chart-line"></i> Open the Grafana dashboard</a>' +
+      '<span>Loki data updated at ' + new Date().toLocaleTimeString('en-CA') + ' (every 5 min)</span>';
+    lokiOk = true;
+  } catch (e) {
+    lokiOk = false;
+    $('loki-watch').innerHTML = '';
+    $('loki-cards').innerHTML = '';
+    $('loki-lists').innerHTML = '<p class="lokierr"><span class="dot offline-dot"></span>Loki unreachable (' + esc(e.message) +
+      '): check the Nginx relay /loki-api/ and the Loki container.</p>';
+    $('loki-foot').innerHTML = '';
+  }
+  renderFirewallZone();
+}
+
+async function load() {
+  const paths = { system: 'system', gateways: 'gateways', interfaces: 'interfaces', services: 'services', leases: 'dhcp_server/leases', log: 'logs/firewall?limit=500&reverse=true' };
+  const R = {};
+  await Promise.all(Object.keys(paths).map(async k => {
+    try { R[k] = await api(paths[k]); } catch (e) { R[k] = null; if (/HTTP (401|403)/.test(e.message)) R.authError = true; }
+  }));
+  if (R.authError) {
+    clearInterval(timer);
+    $('status').className = 'online down';
+    $('status').querySelector('span').textContent = 'API key refused: refresh stopped';
+    $('updated').textContent = 'Fix the key in Nginx, then reload the page.';
+    return;
+  }
+
+  const st = $('status');
+  if (!R.system && !R.gateways) {
+    st.className = 'online down';
+    st.querySelector('span').textContent = 'pfSense unreachable';
+  } else {
+    const gwOk = (R.gateways || []).every(g => g.status === 'online');
+    const svcOk = (R.services || []).every(s => s.status === true || s.status === 'running' || !s.enabled);
+    const ifOk = (R.interfaces || []).every(i => i.status === 'up');
+    const all = gwOk && svcOk && ifOk;
+    st.className = 'online' + (all ? '' : ' degraded');
+    st.querySelector('span').textContent = all ? 'pfSense operational' : 'pfSense: an item needs attention';
+  }
+
+  $('system').innerHTML = systemCards(R.system);
+  $('gateways').innerHTML = gatewayCards(R.gateways);
+  $('interfaces').innerHTML = interfaceRows(R.interfaces);
+  $('services').innerHTML = serviceChips(R.services);
+  lastR = R;
+  renderFirewallZone();
+  $('updated').textContent = 'Last update: ' + new Date().toLocaleTimeString('en-CA');
+  if (!lokiStarted) { lokiStarted = true; loadLoki(); setInterval(loadLoki, LOKI_REFRESH_MS); }
+  if (!nvmeStarted) { nvmeStarted = true; loadNvme(); setInterval(loadNvme, NVME_REFRESH_MS); }
+}
+
+let timer = null;
+timer = setInterval(load, REFRESH_MS);
+load();
+</script>
+<script src="./js/clock.js"></script>
+<script src="./js/fit-page.js"></script>
+</body>
+</html>

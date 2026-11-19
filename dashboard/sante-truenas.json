@@ -1,0 +1,119 @@
+{
+ "ok": true,
+ "checked": "2026-11-16T21:30:04",
+ "pools": [
+  {
+   "nom": "volume1",
+   "etat": "ONLINE",
+   "sain": true,
+   "scrub_etat": "FINISHED",
+   "scrub_fin": "2026-11-08T08:12:33",
+   "scrub_erreurs": 0
+  },
+  {
+   "nom": "boot-pool",
+   "etat": "ONLINE",
+   "sain": true,
+   "scrub_etat": "FINISHED",
+   "scrub_fin": "2026-11-14T03:50:58",
+   "scrub_erreurs": 0
+  }
+ ],
+ "disques": [
+  {
+   "disque": "sda",
+   "modele": "SPCC Solid State Disk",
+   "smart_ok": true,
+   "temperature_c": 40,
+   "secteurs_realloues": 0,
+   "secteurs_en_attente": 0,
+   "secteurs_illisibles": 0
+  },
+  {
+   "disque": "sdb",
+   "modele": "ST4000NE001-2MA101",
+   "smart_ok": true,
+   "temperature_c": 35,
+   "secteurs_realloues": 0,
+   "secteurs_en_attente": 0,
+   "secteurs_illisibles": 0
+  },
+  {
+   "disque": "sdc",
+   "modele": "ST4000NE001-2MA101",
+   "smart_ok": true,
+   "temperature_c": 35,
+   "secteurs_realloues": 0,
+   "secteurs_en_attente": 0,
+   "secteurs_illisibles": 0
+  },
+  {
+   "disque": "sdd",
+   "modele": "KINGSTON SA400S37240G",
+   "smart_ok": true,
+   "temperature_c": 31,
+   "secteurs_realloues": null,
+   "secteurs_en_attente": null,
+   "secteurs_illisibles": null
+  }
+ ],
+ "taches": [
+  {
+   "type": "Instantané",
+   "nom": "volume1/Linux_Backup",
+   "active": true,
+   "etat": "FINISHED",
+   "derniere_execution": "2026-11-16T00:00:01",
+   "erreur": null
+  },
+  {
+   "type": "Instantané",
+   "nom": "volume1/ix-applications",
+   "active": true,
+   "etat": "FINISHED",
+   "derniere_execution": "2026-11-16T00:15:01",
+   "erreur": null
+  },
+  {
+   "type": "Instantané",
+   "nom": "volume1/synology_music",
+   "active": true,
+   "etat": "FINISHED",
+   "derniere_execution": "2026-11-16T00:00:01",
+   "erreur": null
+  },
+  {
+   "type": "Instantané",
+   "nom": "volume1/synology_nas",
+   "active": true,
+   "etat": "FINISHED",
+   "derniere_execution": "2026-11-16T01:00:01",
+   "erreur": null
+  },
+  {
+   "type": "Instantané",
+   "nom": "volume1/synology_share_folder",
+   "active": true,
+   "etat": "FINISHED",
+   "derniere_execution": "2026-11-16T01:15:01",
+   "erreur": null
+  },
+  {
+   "type": "Instantané",
+   "nom": "volume1/synology_software_folder",
+   "active": true,
+   "etat": "FINISHED",
+   "derniere_execution": "2026-11-16T01:30:01",
+   "erreur": null
+  },
+  {
+   "type": "Instantané",
+   "nom": "volume1/Backup_ha",
+   "active": true,
+   "etat": "FINISHED",
+   "derniere_execution": "2026-11-15T01:30:00",
+   "erreur": null
+  }
+ ],
+ "erreurs": []
+}

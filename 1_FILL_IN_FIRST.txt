@@ -1,0 +1,68 @@
+HOMELAB DASHBOARD - QUESTIONS TO FILL IN FIRST
+==============================================
+
+HOW TO USE THESE 2 FILES
+1. In Claude, create a Project (for example "Homelab Dashboard").
+   Tip from experience: every conversation about the dashboard then stays in the same
+   place, Claude keeps the context from one chat to the next, and it is much easier to
+   follow the work over days and weeks.
+2. Fill in this file (write your answers after each question).
+3. Paste the content of 2_PROMPT_FOR_CLAUDE.txt in the Project instructions.
+4. Add this file, once filled in, to the Project knowledge.
+5. Start a new chat in the Project and write: "Read my answers and propose the first step."
+
+Never write passwords, tokens or API keys in this file or in the chat.
+
+
+PART 1 - MY SETUP
+-----------------
+1. Firewall / router (brand, model, software):
+
+2. Internet provider and modem (is the modem in bridge mode or DMZ?):
+
+3. VPN (provider, on the router or on each device?):
+
+4. Servers / hypervisor (Proxmox, ESXi, bare metal...):
+
+5. NAS (brand, model, how many disks):
+
+6. Network gear (switches, Wi-Fi, cameras):
+
+7. Home automation (Home Assistant or other):
+
+8. GPU for the local AI (model and amount of VRAM), or none yet:
+
+9. What is already running (Docker, n8n, Uptime Kuma, Grafana, Loki, Glances...):
+
+10. Where would you host the dashboard web pages (NAS, server, container)?
+
+11. Do you want access from your phone? (Android, iPhone, browser only)
+
+12. What do you want first? (live dashboard, morning report, firewall/attacks,
+    disks and backups, updates, outage diagnosis...)
+
+
+PART 2 - HOW I WANT CLAUDE TO WORK
+----------------------------------
+Answer yes / no, or write your own preference.
+
+13. One step at a time: Claude tells me what to test and waits for my result
+    before the next step?
+
+14. Complete files or complete code blocks ready to copy-paste, never fragments
+    to insert?
+
+15. A version line at the top of every file (vYYYY.MM.DD-N) and a VERSIONS.txt log
+    that Claude updates and gives me in full each time?
+
+16. Read-only checks first, and a warning before anything that can cut the network?
+
+17. Language for the answers and the morning report (English, French, other):
+
+18. My level (beginner, comfortable with Linux and Docker, expert):
+
+19. Anything else I like or dislike in answers (short answers, more explanations,
+    no tiny grey text, no italics...):
+
+----------------------------------------------------------------------
+Built by Playback71 (MY HOMELAB project), with the help of Claude (Anthropic) - November 2026

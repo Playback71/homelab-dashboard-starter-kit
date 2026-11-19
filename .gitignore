@@ -1,0 +1,43 @@
+# MY HOMELAB starter kit — never commit secrets or private data
+#
+# This file blocks the files most likely to leak keys, passwords or real addresses.
+# It does NOT clean files already committed — keep running your own check before a push.
+
+# --- The correspondence table that maps placeholders back to your real values ---
+correspondance*.txt
+*NE-PAS-ENVOYER*
+*DO-NOT-SHARE*
+
+# --- Secrets and environment files ---
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.pfx
+secrets*
+*secret*
+
+# --- The REAL Nginx config (keep only dashboard/nginx-example/default.conf) ---
+# Your live default.conf holds API keys. Never commit it.
+/default.conf
+nginx-config/
+**/default.conf.real
+
+# --- Android (if you ever add the app here): signing keys and local settings ---
+*.jks
+*.keystore
+local.properties
+keystore.properties
+google-services.json
+/app/release/
+build/
+.gradle/
+
+# --- OS / editor noise ---
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+node_modules/

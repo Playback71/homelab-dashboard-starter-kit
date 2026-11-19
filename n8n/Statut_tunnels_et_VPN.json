@@ -1,0 +1,60 @@
+{
+  "name": "Statut tunnels et VPN",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// Statut tunnels (workflow « Statut tunnels et VPN ») : v2026.11.12-7 : première version\n// Même code que le nœud check_tunnels_vpn du rapport du matin, appelé à la demande par la carte\n// « Accès externe » du dashboard (Webhook GET /webhook/statut-tunnels, relais Nginx /n8n-tunnels/).\n// 1) Tunnels Cloudflare : état de chaque tunnel (healthy, degraded, down, inactive) et nombre de connexions,\n//    lus avec un jeton API en lecture seule (permission Account, Cloudflare Tunnel, Read).\n// 2) Passerelles pfSense : état, perte et délai de chaque passerelle (API REST v2 /status/gateways).\n//    Les passerelles VPN sont reconnues par leur nom (NORD ou VPN).\n// Sortie : 1 item { tunnels, tunnels_erreur, passerelles, passerelles_erreur }\n\nconst CLOUDFLARE = {\n  compte: 'A_REMPLIR',\n  jeton: 'A_REMPLIR',\n};\nconst PFSENSE = {\n  url: 'https://IP_PRIVEE_2:PORT_2',\n  cle: 'A_REMPLIR',   // la même clé que dans le nœud check_pfsense_logs\n};\n\nconst sortie = { verifie_a: new Date().toISOString(), tunnels: [], tunnels_erreur: null, passerelles: [], passerelles_erreur: null };\n\n// ---- 1) Tunnels Cloudflare ----\nif (CLOUDFLARE.jeton.startsWith('COLLER_')) {\n  sortie.tunnels_erreur = 'jeton Cloudflare absent dans le nœud check_tunnels_vpn';\n} else {\n  try {\n    const r = await this.helpers.httpRequest({\n      method: 'GET',\n      url: 'https://api.cloudflare.com/client/v4/accounts/' + CLOUDFLARE.compte + '/cfd_tunnel?is_deleted=false',\n      headers: { Authorization: 'Bearer ' + CLOUDFLARE.jeton },\n      json: true,\n    });\n    if (!r.success) {\n      sortie.tunnels_erreur = 'réponse Cloudflare en échec : ' + JSON.stringify(r.errors || r).slice(0, 150);\n    } else {\n      sortie.tunnels = (r.result || []).map(t => ({\n        nom: t.name,\n        etat: t.status,                                   // healthy, degraded, down, inactive\n        connexions: (t.connections || []).length,\n        centres: [...new Set((t.connections || []).map(c => c.colo_name).filter(Boolean))],\n        actif_depuis: t.conns_active_at || null,\n      }));\n    }\n  } catch (e) {\n    sortie.tunnels_erreur = 'appel Cloudflare impossible : ' + String(e.message).slice(0, 150);\n  }\n}\n\n// ---- 2) Passerelles pfSense ----\nconst texte = v => (v == null ? '' : String(v));\nconst nombre = v => { const n = parseFloat(texte(v).replace(',', '.')); return isNaN(n) ? null : n; };\nif (PFSENSE.cle.startsWith('COLLER_')) {\n  sortie.passerelles_erreur = 'clé API pfSense absente dans le nœud check_tunnels_vpn';\n} else {\n  try {\n    const r = await this.helpers.httpRequest({\n      method: 'GET',\n      url: PFSENSE.url + '/api/v2/status/gateways',\n      headers: { 'X-API-Key': PFSENSE.cle, Accept: 'application/json' },\n      skipSslCertificateValidation: true,\n      json: true,\n    });\n    const liste = Array.isArray(r.data) ? r.data : [];\n    if (!liste.length) sortie.passerelles_erreur = 'aucune passerelle dans la réponse : ' + JSON.stringify(r).slice(0, 150);\n    sortie.passerelles = liste.map(g => {\n      const nom = texte(g.name || g.gateway || g.monitorip);\n      return {\n        nom,\n        vpn: /nord|vpn/i.test(nom),\n        etat: texte(g.status),                            // online, down...\n        sous_etat: texte(g.substatus),                    // none, highloss, highdelay...\n        perte_pct: nombre(g.loss),\n        delai_ms: nombre(g.delay),\n        ip_surveillee: texte(g.monitorip),\n      };\n    });\n  } catch (e) {\n    sortie.passerelles_erreur = 'appel pfSense impossible : ' + String(e.message).slice(0, 150);\n  }\n}\n\nreturn [{ json: sortie }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ],
+      "id": "de225b83-291f-480c-a5db-585c775396d3",
+      "name": "Statut tunnels"
+    },
+    {
+      "parameters": {
+        "path": "statut-tunnels",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "a0a66dde-87d2-4934-9048-609565cf6a18",
+      "name": "Webhook statut tunnels",
+      "webhookId": "7d664417-693e-42ae-a0f5-f3a6dc3e0ad3"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook statut tunnels": {
+      "main": [
+        [
+          {
+            "node": "Statut tunnels",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "d3f2960e-20ea-423e-be22-55f311f54d0c",
+  "meta": {
+    "instanceId": "8130f57fae415683139811b2d51638f30d2fd4c001e5e0928ad85efb2ab9daa5"
+  },
+  "nodeGroups": [],
+  "id": "tpvN10Biji7hBCeP",
+  "tags": []
+}
