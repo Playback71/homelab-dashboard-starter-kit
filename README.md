@@ -67,8 +67,6 @@ comments inside the workflows are in French; Claude can translate or explain the
 - Don't expose n8n, Uptime Kuma, Ollama or the dashboard to the Internet. Use a VPN
   (WireGuard) for remote access.
 - Before sharing any n8n export, remove keys, tokens, passwords, addresses and domains.
-- Be careful with anything that touches the firewall or a VPN kill switch — a wrong
-  gateway setting can cut the whole network.
 
 ## Credits
 
