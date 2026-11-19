@@ -1,3 +1,6 @@
+// Dashboard — Android app (WebView) for the MY HOMELAB project
+// Built by Playback71, with the help of Claude (Anthropic) — November 2026
+
 package app.homelab.dashboard
 
 import android.annotation.SuppressLint
