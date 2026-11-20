@@ -78,6 +78,15 @@ STEP 4 - UPTIME KUMA
 Open http://IP-OF-THE-MACHINE:3001 and create the admin account.
 - Add a Ping monitor for each important device (firewall, modem, switches, NAS, servers).
   Use a 30-second interval for the network chain so the order of failures is reliable.
+- A service checked through its PUBLIC address (for example https://ha.example.com behind a
+  Cloudflare tunnel) goes through the internet, Cloudflare and the tunnel: short errors on that
+  path (Cloudflare 520, 530 or 502, ECONNRESET, timeouts) show up as fake 2-minute outages.
+  Set Retries to 2 on these monitors, and add a second monitor on the LOCAL address
+  (for example http://LOCAL-IP:8123, named "HA (local)"):
+      local up   + public up    = all good
+      local up   + public down  = the device works, the outside access is down (tunnel, VPN, internet)
+      local down + public down  = the device itself is down
+  Do not rename existing monitors: the dashboard and n8n find them by their exact name.
 - Create a Status Page (the original one is called "homelab") and add your monitors to it:
   the dashboard and n8n read this public status page, no API key needed.
 
@@ -127,6 +136,9 @@ use it as a model. The method that works:
   - one "check_" node per system, in a single chain;
   - "Préparer systèmes" (Prepare systems) applies FIXED RULES: OK / WARN / CRIT. The AI never decides the status;
   - "Prompt Ollama" asks the AI only to explain and propose a fix, in strict JSON, with one rule per system;
+  - "Code in JavaScript1" has safety nets: for some systems (Uptime Kuma in WARN, pfSense logs) the
+    code writes the diagnosis itself from the real data, because a small local model does not always
+    follow a long prompt (it once proposed restarting the VPN for an outage that was already over);
   - the last Code nodes build the HTML report and save it in an n8n Data Table ("rapport_matin").
 
 
