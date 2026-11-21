@@ -54,7 +54,7 @@ way to adapt it is with Claude, step by step — see `2_PROMPT_FOR_CLAUDE.txt`.
 
 <p align="center">
   <img src="screenshots/network-diagnosis.png" alt="Internet diagnosis chain from the VPN tunnel down to the switches, with the 30-day outage log" width="560">
-  <br><sub><b>Internet diagnosis</b> — the chain from the VPN tunnel down to the switches, and the 30-day outage log with the exact order devices dropped and came back.</sub>
+  <br><sub><b>Internet diagnosis</b> — the chain from the VPN tunnel down to the switches, and the 30-day outage log with the exact order devices dropped and came back. Here, a firewall reboot after an update: the log names the firewall as the cause, not the switches it hides.</sub>
 </p>
 
 <p align="center">
