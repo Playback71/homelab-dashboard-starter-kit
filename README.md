@@ -1,9 +1,21 @@
 # Homelab Dashboard — Starter Kit
 
+![License: MIT](https://img.shields.io/badge/license-MIT-00eaff)
+![n8n](https://img.shields.io/badge/automation-n8n-ea4b71)
+![Ollama](https://img.shields.io/badge/local%20AI-Ollama-ffffff)
+![pfSense](https://img.shields.io/badge/firewall-pfSense-212121)
+![Uptime Kuma](https://img.shields.io/badge/monitoring-Uptime%20Kuma-5cdd8b)
+
 A home-built homelab dashboard plus a **morning report written by a local AI** that
 diagnoses problems and proposes fixes you can copy-paste. This kit is the sanitized,
 shareable base of my own setup: a dark NOC-style dashboard, an outage log, and the
 n8n workflows behind the morning report.
+
+<p align="center">
+  <img src="screenshots/dashboard.png" alt="Main dashboard: live CPU, RAM, temperature, network, storage, disks and backups for each NAS" width="100%">
+</p>
+
+<p align="center"><b><a href="https://claude.ai/artifact/UrTWWs2ZfZcS3ZK2A4ynHq">Take the full tour →</a></b> &nbsp;·&nbsp; firewall, AI report, GPU, outages, storage and the Android app on one page.</p>
 
 > **It's a recipe, not an installer.** You don't install this — you cook it, with Claude
 > as your sous-chef. Bring your own ingredients (your hardware, your firewall, your NAS,
@@ -32,6 +44,25 @@ way to adapt it is with Claude, step by step — see `2_PROMPT_FOR_CLAUDE.txt`.
   came back — a 3 a.m. outage is still there in the morning.
 - **Per-device history**: tap any card on the network map for its timeline over 1, 3, 7
   or 30 days (one bar per hour).
+
+## Screenshots
+
+<p align="center">
+  <img src="screenshots/noc-supervision.png" alt="NOC supervision page: equipment status, Home Assistant and Nextcloud reachable locally and through their domain, rack temperature and ping" width="100%">
+  <br><sub><b>NOC supervision</b> — every device at a glance. Home Assistant and Nextcloud show two checks: <i>Local</i> (the service itself) and <i>Domain</i> (access from outside, through the Cloudflare tunnel).</sub>
+</p>
+
+<p align="center">
+  <img src="screenshots/network-diagnosis.png" alt="Internet diagnosis chain from the VPN tunnel down to the switches, with the 30-day outage log" width="560">
+  <br><sub><b>Internet diagnosis</b> — the chain from the VPN tunnel down to the switches, and the 30-day outage log with the exact order devices dropped and came back.</sub>
+</p>
+
+<p align="center">
+  <img src="screenshots/firewall-snort.png" alt="Firewall and Snort page: IPs to watch with AbuseIPDB links, WAN blocks, SYN scans, Snort alerts, targeted ports and blocks per interface" width="100%">
+  <br><sub><b>Firewall &amp; Snort (24 h)</b> — external IPs to watch, checked on AbuseIPDB, plus blocks, SYN scans, Snort alerts and the most targeted ports, read from Loki.</sub>
+</p>
+
+<sub>Screenshots come from the original dashboard, which is in French; the pages in this kit are translated to English. External and private IP addresses are blurred. The original may show a few cards that are newer than this kit.</sub>
 
 ## What's in the package
 
