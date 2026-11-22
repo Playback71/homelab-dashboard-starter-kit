@@ -16,7 +16,7 @@
     },
     {
       "parameters": {
-        "url": "https://DOMAINE_1.example/api/status-page/homelab",
+        "url": "http://IP_PRIVEE_4:PORT_3/api/status-page/homelab",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -26,11 +26,14 @@
         0
       ],
       "id": "cbf04eb2-7296-4be7-960b-59e9f141e827",
-      "name": "HTTP Request"
+      "name": "HTTP Request",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
-        "url": "https://DOMAINE_1.example/api/status-page/heartbeat/homelab",
+        "url": "http://IP_PRIVEE_4:PORT_3/api/status-page/heartbeat/homelab",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -40,7 +43,10 @@
         224
       ],
       "id": "69f86403-3e41-4ce2-9316-1b12455552fe",
-      "name": "HTTP Request1"
+      "name": "HTTP Request1",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {},

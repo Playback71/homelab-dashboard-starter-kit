@@ -58,6 +58,11 @@ way to adapt it is with Claude, step by step — see `2_PROMPT_FOR_CLAUDE.txt`.
 </p>
 
 <p align="center">
+  <img src="screenshots/outage-tests.png" alt="Two outage tests side by side: ISP cable unplugged (ISP is the cause) and modem powered off (modem is the cause, ISP is a consequence)" width="100%">
+  <br><sub><b>Two real outage tests</b> — ISP cable unplugged, then modem powered off. The diagnosis walks up the chain and names the right link each time: the ISP on the left, the modem on the right, where the ISP failure is only a consequence.</sub>
+</p>
+
+<p align="center">
   <img src="screenshots/firewall-snort.png" alt="Firewall and Snort page: IPs to watch with AbuseIPDB links, WAN blocks, SYN scans, Snort alerts, targeted ports and blocks per interface" width="100%">
   <br><sub><b>Firewall &amp; Snort (24 h)</b> — external IPs to watch, checked on AbuseIPDB, plus blocks, SYN scans, Snort alerts and the most targeted ports, read from Loki.</sub>
 </p>
