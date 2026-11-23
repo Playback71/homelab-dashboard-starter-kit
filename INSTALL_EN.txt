@@ -89,6 +89,15 @@ Open http://IP-OF-THE-MACHINE:3001 and create the admin account.
   Do not rename existing monitors: the dashboard and n8n find them by their exact name.
 - Create a Status Page (the original one is called "homelab") and add your monitors to it:
   the dashboard and n8n read this public status page, no API key needed.
+- Optional, once the pfSense logs go to Loki: a monitor that catches the firewall refusing its own
+  rules ("There were error(s) loading the rules", often a damaged pfBlockerNG list after an internet
+  outage: no internet, slow network, and every other monitor stays green). Type "HTTP(s) - Json Query":
+      URL         http://LOKI-IP:3100/loki/api/v1/query?query=sum%28count_over_time%28%7Bjob%3D%22syslog%22%7D%20%7C%3D%20%22error%28s%29%20loading%20the%20rules%22%20%5B10m%5D%29%29%20or%20vector%280%29
+      Json Query  data.result[0].value[1]      Expected Value  0
+      Interval 60 s, Retries 0. Name it exactly "pfSense règles": the outage log and the morning report
+      recognize it by that name, and treat it as a consequence when Loki or its server is down at the
+      same time. Fix when it is the real cause: pfBlockerNG, Update, Force Reload All, then check with
+      pfctl -nf /tmp/rules.debug in Diagnostics, Command Prompt.
 
 
 STEP 5 - THE DASHBOARD WEB SERVER (Nginx)
