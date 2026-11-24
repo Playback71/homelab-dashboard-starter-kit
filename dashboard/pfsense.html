@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- pfsense.html : v2026.11.24-1 : English version (MY HOMELAB starter kit). pfSense page: system, NVMe disk, gateways, interfaces, services, firewall and Snort (Loki) ; v2026.11.24-1 : WAN blocks, SYN scans and Snort alerts cards: a click shows their history read from Loki (1 day = 5-minute curve, 3 days = hourly curve, 7 and 30 days = one bar per day), comparison with the period before ; gateway cards show a short name (NORDVPN1 instead of NORDVPN1_VPNV4, full name on hover) -->
+<!-- pfsense.html : v2026.11.24-3 : no "Tap to see the history" tooltip on an open card ; abbreviated labels rounded to one decimal (10.6 k instead of 10.606 k) ; "MY HOMELAB" logo instead of "PROXMOX LAB" ; v2026.11.24-1 : English version (MY HOMELAB starter kit). pfSense page: system, NVMe disk, gateways, interfaces, services, firewall and Snort (Loki) ; v2026.11.24-1 : WAN blocks, SYN scans and Snort alerts cards: a click shows their history read from Loki (1 day = 5-minute curve, 3 days = hourly curve, 7 and 30 days = one bar per day), comparison with the period before ; gateway cards show a short name (NORDVPN1 instead of NORDVPN1_VPNV4, full name on hover) -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -90,7 +90,7 @@
 <div class="overlay"></div>
 
 <header>
-<div class="logo"><i class="fa-solid fa-layer-group"></i> PROXMOX LAB</div>
+<div class="logo"><i class="fa-solid fa-server"></i> MY HOMELAB</div>
 <nav>
 <a href="/index.html"><i class="fa-solid fa-gauge"></i> Dashboard</a>
 <a href="/documentation.html"><i class="fa-solid fa-book"></i> Documentation</a>
@@ -520,7 +520,9 @@ function lkGraduations(haut, yv) {
   liste.filter(v => v <= haut).forEach(v => { if (dernier - yv(v) >= 26) { garde.push(v); dernier = yv(v); } });
   return garde;
 }
-const lkAbrege = v => v >= 1e6 ? (v / 1e6).toLocaleString('en-CA') + ' M' : v >= 1e4 ? (v / 1e3).toLocaleString('en-CA') + ' k' : v.toLocaleString('en-CA');
+// Abbreviated: 15,459 -> 15.5 k ; 1,234,567 -> 1.2 M (one decimal at most, v2026.11.24-3)
+const lkUneDec = x => (Math.round(x * 10) / 10).toLocaleString('en-CA', { maximumFractionDigits: 1 });
+const lkAbrege = v => v >= 1e6 ? lkUneDec(v / 1e6) + ' M' : v >= 1e4 ? lkUneDec(v / 1e3) + ' k' : v.toLocaleString('en-CA');
 
 function dessinerHisto() {
   const D0 = lkDonnees;
@@ -696,6 +698,7 @@ function fermerHisto() {
     carte.setAttribute('aria-expanded', 'false');
     carte.querySelector('.lk-histo').hidden = true;
     carte.querySelector('.lk-indice').textContent = 'Tap for the history';
+    carte.title = 'Tap to see the history';   // tooltip back when the card is closed
   }
   lkOuverte = null;
   clearInterval(lkMinuterie);
@@ -708,6 +711,7 @@ function ouvrirHisto(cle) {
   lkOuverte = cle;
   carte.classList.add('ouverte');
   carte.setAttribute('aria-expanded', 'true');
+  carte.removeAttribute('title');   // no "Tap to see the history" tooltip on an open card (v2026.11.24-3)
   carte.querySelector('.lk-histo').hidden = false;
   carte.querySelector('.lk-indice').textContent = 'Tap the icon or the title to go back';
   majBoutonsHisto(carte);
