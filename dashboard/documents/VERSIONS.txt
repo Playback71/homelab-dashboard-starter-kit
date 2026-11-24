@@ -1,5 +1,11 @@
 VERSIONS.txt : log of every change to the dashboard (example)
 
+2026-11-24  v2026.11.24-1
+------------------------
+Site : pfsense.html, WAN blocks, SYN scans and Snort alerts cards: tap for the history read
+       from Loki (1 day = 5-minute curve, 3 days = hourly curve, 7 and 30 days = one bar per
+       day), comparison with the period before; short gateway names (NORDVPN1).
+
 2026-11-17  v2026.11.17-1
 ------------------------
 Site : first install of the dashboard example (MY HOMELAB starter kit).
