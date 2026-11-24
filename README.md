@@ -44,6 +44,9 @@ way to adapt it is with Claude, step by step — see `2_PROMPT_FOR_CLAUDE.txt`.
   came back — a 3 a.m. outage is still there in the morning.
 - **Per-device history**: tap any card on the network map for its timeline over 1, 3, 7
   or 30 days (one bar per hour).
+- **Attack history**: on the pfSense page, tap the WAN blocks, SYN scans or Snort alerts
+  card for its history read from Loki (1, 3, 7 or 30 days), with a comparison against
+  the period before — handy to see whether a change actually reduced the noise.
 
 ## Screenshots
 

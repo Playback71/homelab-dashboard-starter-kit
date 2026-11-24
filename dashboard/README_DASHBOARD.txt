@@ -23,7 +23,10 @@ WHAT IS IN THIS FOLDER
   journal.html         Morning report written by the local AI (n8n), "Run the Workflow" button,
                        recent activity (Kuma + Proxmox), Synology containers
   pfsense.html         pfSense: system, NVMe disk, gateways, interfaces, services,
-                       firewall and Snort statistics read from Loki, attacks to watch
+                       firewall and Snort statistics read from Loki, attacks to watch;
+                       tap the WAN blocks, SYN scans or Snort alerts card for its history
+                       (1, 3, 7 or 30 days, read from Loki through /loki-api/, with a
+                       comparison against the period before)
   proxmox.html         Proxmox: nodes, disks health, backups, VMs and containers, latest operations
   documentation.html   Documents list (/documents/ folder) and the version log (VERSIONS.txt)
 

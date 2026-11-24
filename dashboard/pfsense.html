@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- pfsense.html : v2026.11.17-4 : English version (MY HOMELAB starter kit). pfSense page: system, NVMe disk, gateways, interfaces, services, firewall and Snort (Loki) -->
+<!-- pfsense.html : v2026.11.24-1 : English version (MY HOMELAB starter kit). pfSense page: system, NVMe disk, gateways, interfaces, services, firewall and Snort (Loki) ; v2026.11.24-1 : WAN blocks, SYN scans and Snort alerts cards: a click shows their history read from Loki (1 day = 5-minute curve, 3 days = hourly curve, 7 and 30 days = one bar per day), comparison with the period before ; gateway cards show a short name (NORDVPN1 instead of NORDVPN1_VPNV4, full name on hover) -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -58,6 +58,27 @@
 .gbtn{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border:1px solid #00ff88;border-radius:10px;color:#00ff88;text-decoration:none;font-weight:bold;}
 .gbtn:hover{background:rgba(0,255,136,.12);}
 .lokierr{display:flex;align-items:center;gap:10px;font-size:1rem;color:#fff;padding:6px 0;}
+
+/* v2026.11.24-1 : history of the WAN blocks, SYN scans and Snort alerts cards (same look as the WAN traffic card of reseau.html) */
+.carte-lk{cursor:pointer;}
+.carte-lk:focus-visible{outline:2px solid #00eaff;outline-offset:3px;}
+.carte-lk.ouverte{grid-column:1/-1;cursor:default;}
+.carte-lk.ouverte:hover{transform:none;}
+.carte-lk.ouverte > i, .carte-lk.ouverte > h2, .carte-lk.ouverte > .number{cursor:pointer;}
+.lk-indice{color:#9fdcf0;font-size:.95rem;margin-top:8px;}
+.lk-histo{margin-top:14px;text-align:left;}
+.lk-boutons{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:12px;}
+.lk-boutons button{font:inherit;font-size:1rem;color:#e8f6ff;background:rgba(0,0,0,.35);border:1px solid rgba(0,238,255,.35);border-radius:10px;padding:7px 16px;cursor:pointer;}
+.lk-boutons button.actif{background:rgba(0,238,255,.2);color:#00eaff;border-color:#00eaff;font-weight:700;}
+.lk-graph{width:100%;min-height:120px;color:#e8f6ff;text-align:center;font-size:1.05rem;}
+.lk-graph svg{width:100%;height:auto;display:block;touch-action:pan-y;}
+.lk-info{min-height:1.6em;text-align:center;font-size:1.1rem;color:#e8f6ff;margin-top:6px;font-variant-numeric:tabular-nums;}
+.lk-resume{display:flex;justify-content:center;gap:6px 24px;flex-wrap:wrap;margin-top:8px;font-size:1.1rem;color:#e8f6ff;font-variant-numeric:tabular-nums;}
+.lk-resume b{color:var(--c,#00eaff);}
+.lk-resume .baisse{color:#00ff88;}
+.lk-resume .hausse{color:#ff6b6b;}
+.lk-note{margin-top:8px;text-align:center;font-size:1rem;color:#e8f6ff;}
+@media (max-width:900px){.carte-lk.ouverte{padding:14px 10px;}.lk-boutons button{padding:6px 12px;font-size:.95rem;}.lk-info,.lk-resume,.lk-note{font-size:.95rem;}}
 </style>
 <style id="zoom-mobile">@media (max-width:900px){html{zoom:0.9}}</style>
 <link rel="icon" type="image/png" href="favicon.png">
@@ -207,12 +228,15 @@ function nvmeCard() {
     lignes.map(l => '<p>' + esc(l) + '</p>').join('') + '</div>';
 }
 
+// Short gateway name on the card: NORDVPN1_VPNV4 -> NORDVPN1 (display only, the gateway is not renamed in pfSense).
+const nomCourtPasserelle = n => String(n || '').replace(/_VPNV[46]$/i, '');
+
 function gatewayCards(g) {
   if (!g) return '<p>Gateways unavailable.</p>';
   return g.map(x => {
     const ok = x.status === 'online';
     const dot = ok ? (x.loss > 0 ? 'warning-dot' : 'online-dot') : 'offline-dot';
-    return '<div class="card"><i class="fa-solid fa-globe"></i><h2>' + esc(x.name) + '</h2>' +
+    return '<div class="card"><i class="fa-solid fa-globe"></i><h2 title="' + esc(x.name) + '">' + esc(nomCourtPasserelle(x.name)) + '</h2>' +
       '<div class="vm-status"><span class="dot ' + dot + '"></span>' + esc(String(x.status).toUpperCase()) + '</div>' +
       '<p>Latency: ' + Number(x.delay).toFixed(1) + ' ms</p><p>Loss: ' + x.loss + ' %</p></div>';
   }).join('');
@@ -316,11 +340,6 @@ async function ltop(expr, key, max) {
     .sort((a, b) => b.n - a.n).slice(0, max || 5);
 }
 
-function statCard(icon, title, value, sub) {
-  return '<div class="card"><i class="fa-solid ' + icon + '"></i><h2>' + esc(title) + '</h2>' +
-    '<div class="number">' + value.toLocaleString('en-CA') + '</div><p>' + esc(sub) + '</p></div>';
-}
-
 function topBox(title, icon, items, color, wide, label) {
   const max = items.length ? items[0].n : 1;
   const rows = items.length
@@ -373,6 +392,354 @@ function renderFirewallZone() {
     : firewallPanel(lastR.log, lastR.interfaces, lastR.leases);
 }
 
+// ===== History of the WAN blocks, SYN scans and Snort alerts cards (v2026.11.24-1) =====
+// A click on one of these cards expands it with its history, counted in Loki (query_range, same filters as the card):
+//   1 day       : 5-minute curve
+//   3 days      : hourly curve
+//   7, 30 days  : one bar per day (read hourly, then added up per day)
+// Square-root scale (small values stay visible), the 2 biggest peaks labelled (one on a phone).
+// For 1, 3 and 7 days: comparison with the same length of time just before. A click on the icon, title or number goes back to live.
+// One card open at a time. Results are kept 5 minutes (switching periods does not query Loki again for nothing).
+const HISTO = {
+  wan:   { titre: 'WAN blocks', icone: 'fa-ban', sous: 'blocked incoming connections', sel: () => LFL + LWAN, couleur: '#ff4d4d', mot: 'blocks' },
+  syn:   { titre: 'SYN scans', icone: 'fa-magnifying-glass', sous: 'TCP probes on the WAN', sel: () => LFL + LWAN + LSYN, couleur: '#ffc107', mot: 'scans' },
+  snort: { titre: 'Snort alerts', icone: 'fa-triangle-exclamation', sous: 'over 24 hours', sel: () => LSN, couleur: '#ff8c42', mot: 'alerts' }
+};
+const LK_HEURE = 3600 * 1000, LK_JOUR = 24 * LK_HEURE;
+const LK_JOURS_C = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+let lkConstruites = false, lkOuverte = null, lkJours = 1, lkMinuterie = null, lkDonnees = null;
+const lkCache = new Map();
+
+const lkNb = v => Math.round(v).toLocaleString('en-CA');
+const lkHm = t => { const d = new Date(t); return d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0'); };
+const lkJourCourt = t => { const d = new Date(t); return LK_JOURS_C[d.getDay()] + ' ' + d.getDate(); };
+
+function carteHisto(cle) {
+  const c = HISTO[cle];
+  return '<div class="card carte-lk" id="lk-carte-' + cle + '" data-cle="' + cle + '" role="button" tabindex="0" aria-expanded="false" title="Tap to see the history">' +
+    '<i class="fa-solid ' + c.icone + '"></i><h2>' + esc(c.titre) + '</h2>' +
+    '<div class="number" id="lk-val-' + cle + '">--</div><p>' + esc(c.sous) + '</p>' +
+    '<p class="lk-indice">Tap for the history</p>' +
+    '<div class="lk-histo" hidden>' +
+      '<div class="lk-boutons">' + [1, 3, 7, 30].map(j => '<button type="button" data-jours="' + j + '">' + j + (j === 1 ? ' day' : ' days') + '</button>').join('') + '</div>' +
+      '<div class="lk-graph">Loading the history…</div>' +
+      '<div class="lk-info"></div><div class="lk-resume" style="--c:' + c.couleur + '"></div><div class="lk-note"></div>' +
+    '</div></div>';
+}
+
+// The cards are built once; after that only the numbers change (an open history stays on screen)
+function majCartesLoki(v, h1) {
+  if (!lkConstruites) {
+    $('loki-cards').innerHTML = carteHisto('wan') + carteHisto('syn') + carteHisto('snort') + '<div class="card" id="lk-carte-logs"></div>';
+    lkConstruites = true;
+    lkOuverte = null;
+  }
+  ['wan', 'syn', 'snort'].forEach(k => { $('lk-val-' + k).textContent = v[k].toLocaleString('en-CA'); });
+  const actif = h1 > 0;
+  $('lk-carte-logs').innerHTML = '<i class="fa-solid fa-database"></i><h2>Log reception</h2>' +
+    '<div class="vm-status"><span class="dot ' + (actif ? 'online-dot' : 'offline-dot') + '"></span>' + (actif ? 'ACTIVE' : 'STOPPED') + '</div>' +
+    '<p>' + h1.toLocaleString('en-CA') + ' logs in the last hour</p>';
+}
+
+// Points to read from Loki. At each time t, Loki counts the lines of ]t - step, t]: one point = one bucket that ENDS at t.
+// Hours are aligned on the clock; 7 and 30 days start at midnight (local time) for whole days.
+// 30 days = 720 hours at most: under Loki's usual limit (max_query_length of 721 h).
+function planHisto(jours) {
+  const now = Date.now();
+  if (jours === 1) {
+    const fin = Math.ceil(now / 300000) * 300;          // seconds, next 5-minute boundary
+    return { pas: 300, fenetre: '5m', debut: fin - 287 * 300, fin: fin };   // 288 buckets of 5 min = 24 h
+  }
+  const fin = Math.ceil(now / LK_HEURE) * 3600;          // seconds, end of the current hour
+  let premiereCase;
+  if (jours === 3) premiereCase = fin - 72 * 3600;
+  else { const m = new Date(); m.setHours(0, 0, 0, 0); m.setDate(m.getDate() - (jours - 1)); premiereCase = Math.round(m.getTime() / 1000); }
+  return { pas: 3600, fenetre: '1h', debut: premiereCase + 3600, fin: fin };
+}
+
+async function lserie(expr, debut, fin, pas) {
+  const url = '/loki-api/loki/api/v1/query_range?query=' + encodeURIComponent(expr) +
+    '&start=' + debut + '&end=' + fin + '&step=' + pas;
+  const r = await fetch(url, { cache: 'no-store' });
+  if (!r.ok) {
+    let detail = '';
+    try { detail = (await r.text()).slice(0, 160); } catch (e) { /* nothing */ }
+    throw new Error('HTTP ' + r.status + (detail ? ' : ' + detail : ''));
+  }
+  const j = await r.json();
+  if (j.status !== 'success') throw new Error('invalid Loki response');
+  const m = new Map();
+  (j.data.result || []).forEach(s => (s.values || []).forEach(v => {
+    const t = Math.round(Number(v[0]));
+    m.set(t, (m.get(t) || 0) + Number(v[1]));
+  }));
+  return m;
+}
+
+async function chargerHisto(force) {
+  const cle = lkOuverte, jours = lkJours;
+  if (!cle) return;
+  const carte = $('lk-carte-' + cle);
+  const graph = carte.querySelector('.lk-graph');
+  const k = cle + '-' + jours, enCache = lkCache.get(k);
+  if (enCache && !force && Date.now() - enCache.quand < LOKI_REFRESH_MS) { lkDonnees = enCache; dessinerHisto(); return; }
+  graph.textContent = jours >= 30 ? 'Loading 30 days from Loki (a few seconds)…' : 'Loading the history…';
+  carte.querySelector('.lk-info').textContent = '';
+  carte.querySelector('.lk-resume').innerHTML = '';
+  carte.querySelector('.lk-note').textContent = '';
+  try {
+    const P = planHisto(jours);
+    const sel = HISTO[cle].sel();
+    const fen = jours * 24 + 'h';
+    const [m, comp] = await Promise.all([
+      lserie('sum(count_over_time(' + sel + ' [' + P.fenetre + ']))', P.debut, P.fin, P.pas),
+      jours <= 7
+        ? Promise.all([lnum(lcount(sel, '', fen)), lnum('sum(count_over_time(' + sel + ' [' + fen + '] offset ' + fen + ')) or vector(0)')]).catch(() => null)
+        : Promise.resolve(null)
+    ]);
+    if (lkOuverte !== cle || lkJours !== jours) return;   // the user changed card or period in the meantime
+    const maintenant = Date.now(), pts = [];
+    for (let t = P.debut; t <= P.fin; t += P.pas) {
+      pts.push({ t: (t - P.pas) * 1000, n: Math.round(m.get(t) || 0), enCours: t * 1000 > maintenant });
+    }
+    lkDonnees = { cle, jours, pas: P.pas * 1000, pts, comp, quand: Date.now() };
+    lkCache.set(k, lkDonnees);
+    dessinerHisto();
+  } catch (e) {
+    if (lkOuverte !== cle || lkJours !== jours) return;
+    console.error('Loki history:', e);
+    graph.textContent = 'History unavailable (' + (e.message || e) + ')' +
+      (jours >= 30 ? ': the period may be longer than what Loki keeps or accepts.' : '');
+  }
+}
+
+// Readable gridlines for a square-root scale (at least 26 px apart)
+function lkGraduations(haut, yv) {
+  const liste = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 1e4, 2e4, 5e4, 1e5, 2e5, 5e5, 1e6, 2e6, 5e6];
+  const garde = [0]; let dernier = yv(0);
+  liste.filter(v => v <= haut).forEach(v => { if (dernier - yv(v) >= 26) { garde.push(v); dernier = yv(v); } });
+  return garde;
+}
+const lkAbrege = v => v >= 1e6 ? (v / 1e6).toLocaleString('en-CA') + ' M' : v >= 1e4 ? (v / 1e3).toLocaleString('en-CA') + ' k' : v.toLocaleString('en-CA');
+
+function dessinerHisto() {
+  const D0 = lkDonnees;
+  if (!D0 || D0.cle !== lkOuverte || D0.jours !== lkJours) return;
+  const carte = $('lk-carte-' + D0.cle), C = HISTO[D0.cle], coul = C.couleur, mot = C.mot;
+  const graph = carte.querySelector('.lk-graph'), info = carte.querySelector('.lk-info');
+  const resume = carte.querySelector('.lk-resume'), note = carte.querySelector('.lk-note');
+  const jours = D0.jours, pas = D0.pas, barres = jours >= 7;
+  const W = Math.max(300, Math.round(graph.clientWidth || 600));
+  const petit = W < 560, FS = petit ? 14 : 16;
+  const H = petit ? 270 : 330, G = petit ? 58 : 72, Dr = 14, Hh = 30, B = 56, bas = H - B;
+
+  // Series to draw: Loki's buckets, or their total per day
+  let serie;
+  if (barres) {
+    const parJour = new Map();
+    D0.pts.forEach(p => {
+      const d = new Date(p.t); d.setHours(0, 0, 0, 0);
+      const o = parJour.get(d.getTime()) || { t: d.getTime(), n: 0 };
+      o.n += p.n; parJour.set(d.getTime(), o);
+    });
+    serie = [...parJour.values()].sort((a, b) => a.t - b.t);
+  } else serie = D0.pts;
+  if (!serie.length) { graph.textContent = 'No data.'; return; }
+
+  const debut = serie[0].t;
+  const fin = barres ? serie[serie.length - 1].t + LK_JOUR : serie[serie.length - 1].t + pas;
+  const xg = t => G + (t - debut) / (fin - debut) * (W - G - Dr);
+  const plusHaut = Math.max(5, ...serie.map(p => p.n));
+  const yv = v => bas - Math.sqrt(Math.max(0, v) / plusHaut) * (bas - Hh);
+  let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(C.titre) + ' over ' + jours + ' day(s)">';
+
+  // Horizontal gridlines
+  lkGraduations(plusHaut, yv).forEach(v => {
+    s += '<line x1="' + G + '" x2="' + (W - Dr) + '" y1="' + yv(v) + '" y2="' + yv(v) + '" stroke="rgba(255,255,255,.12)"/>';
+    s += '<text x="' + (G - 8) + '" y="' + (yv(v) + FS / 3) + '" text-anchor="end" font-size="' + FS + '" fill="#e8f6ff">' + lkAbrege(v) + '</text>';
+  });
+
+  let survol = [];
+  if (!barres) {
+    // Time axis: hours, then day name
+    const intervalle = jours <= 1 ? (petit ? 6 : 3) : (petit ? 24 : 12);
+    const h0 = new Date(debut); h0.setMinutes(0, 0, 0);
+    if (h0.getTime() < debut) h0.setTime(h0.getTime() + LK_HEURE);
+    while (h0.getHours() % intervalle !== 0) h0.setTime(h0.getTime() + LK_HEURE);
+    for (let t = h0.getTime(); t <= fin; t += intervalle * LK_HEURE) {
+      const d = new Date(t), minuit = d.getHours() === 0;
+      s += '<line x1="' + xg(t) + '" x2="' + xg(t) + '" y1="' + Hh + '" y2="' + (bas + 6) + '" stroke="' + (minuit ? 'rgba(0,238,255,.35)' : 'rgba(255,255,255,.08)') + '"/>';
+      s += '<text x="' + xg(t) + '" y="' + (bas + FS + 8) + '" text-anchor="middle" font-size="' + FS + '" fill="#e8f6ff">' + d.getHours() + ':00</text>';
+    }
+    const j0 = new Date(debut); j0.setHours(0, 0, 0, 0);
+    for (let d = j0.getTime(); d < fin; d += LK_JOUR) {
+      const a = Math.max(d, debut), b = Math.min(d + LK_JOUR, fin);
+      if ((b - a) / LK_HEURE < (petit ? 7 : 4)) continue;
+      s += '<text x="' + ((xg(a) + xg(b)) / 2) + '" y="' + (bas + 2 * FS + 16) + '" text-anchor="middle" font-size="' + FS + '" font-weight="700" fill="#00eaff">' + lkJourCourt(a) + '</text>';
+    }
+
+    // Curve and area (point in the middle of each bucket)
+    const xm = p => xg(p.t + pas / 2);
+    const ligne = serie.map((p, i) => (i ? 'L' : 'M') + xm(p).toFixed(1) + ' ' + yv(p.n).toFixed(1)).join(' ');
+    const aire = 'M' + xm(serie[0]).toFixed(1) + ' ' + bas + ' ' + serie.map(p => 'L' + xm(p).toFixed(1) + ' ' + yv(p.n).toFixed(1)).join(' ') +
+      ' L' + xm(serie[serie.length - 1]).toFixed(1) + ' ' + bas + ' Z';
+    s += '<path d="' + aire + '" fill="' + coul + '" fill-opacity=".18"/>';
+    s += '<path d="' + ligne + '" fill="none" stroke="' + coul + '" stroke-width="2"/>';
+
+    // Text of one bucket
+    const quand = p => pas === LK_HEURE
+      ? lkJourCourt(p.t) + ', ' + new Date(p.t).getHours() + ':00 to ' + ((new Date(p.t).getHours() + 1) % 24) + ':00'
+      : lkJourCourt(p.t) + ', ' + lkHm(p.t) + ' to ' + lkHm(p.t + pas);
+
+    // Labels of the 2 biggest peaks (one on a phone)
+    const choisies = [];
+    serie.slice().sort((a, b) => b.n - a.n).forEach(p => {
+      if (choisies.length < (petit ? 1 : 2) && p.n >= 1 && choisies.every(c => Math.abs(xm(c) - xm(p)) > 220)) choisies.push(p);
+    });
+    choisies.forEach(p => {
+      const x = xm(p), y = yv(p.n);
+      const txt = lkNb(p.n) + ' · ' + (pas === LK_HEURE ? lkJourCourt(p.t) + ' ' + new Date(p.t).getHours() + ':00' : lkHm(p.t));
+      const ancre = x > W - 170 ? 'end' : x < G + 120 ? 'start' : 'middle';
+      s += '<circle cx="' + x + '" cy="' + y + '" r="4" fill="' + coul + '"/>';
+      s += '<text x="' + x + '" y="' + Math.max(FS, y - 10) + '" text-anchor="' + ancre + '" font-size="' + FS + '" font-weight="700" fill="' + coul + '">' + txt + '</text>';
+    });
+    survol = serie.map(p => ({ x: xm(p), texte: quand(p) + ' : <b style="color:' + coul + '">' + lkNb(p.n) + ' ' + mot + '</b>' + (p.enCours ? ' (in progress)' : '') }));
+  } else {
+    // One bar per day
+    const largeurJour = (W - G - Dr) / serie.length;
+    const lb = Math.max(3, Math.min(40, largeurJour * 0.62));
+    const max = serie.reduce((a, j) => j.n > a.n ? j : a, serie[0]);
+    serie.forEach((j, i) => {
+      const centre = xg(j.t + LK_JOUR / 2), y = yv(j.n);
+      s += '<rect x="' + (centre - lb / 2) + '" y="' + y + '" width="' + lb + '" height="' + (bas - y) + '" rx="2" fill="' + coul + '"' + (i === serie.length - 1 ? ' fill-opacity=".6"' : '') + '/>';
+      if ((jours <= 7 || j === max) && j.n > 0) {
+        s += '<text x="' + centre + '" y="' + (y - 6) + '" text-anchor="middle" font-size="' + (petit ? 12 : 14) + '" font-weight="700" fill="' + coul + '">' + lkAbrege(j.n) + '</text>';
+      }
+      const etiquette = jours <= 7 || i % (petit ? 7 : 4) === 0;
+      if (etiquette) s += '<text x="' + centre + '" y="' + (bas + FS + 8) + '" text-anchor="middle" font-size="' + FS + '" fill="#e8f6ff">' +
+        (jours <= 7 ? lkJourCourt(j.t) : new Date(j.t).getDate() + '/' + (new Date(j.t).getMonth() + 1)) + '</text>';
+    });
+    survol = serie.map((j, i) => ({ x: xg(j.t + LK_JOUR / 2), texte: lkJourCourt(j.t) + ' : <b style="color:' + coul + '">' + lkNb(j.n) + ' ' + mot + '</b>' + (i === serie.length - 1 ? ' (today, in progress)' : '') }));
+  }
+  s += '<line x1="' + G + '" x2="' + (W - Dr) + '" y1="' + bas + '" y2="' + bas + '" stroke="rgba(255,255,255,.35)"/>';
+  s += '<line class="lk-repere" x1="0" x2="0" y1="' + Hh + '" y2="' + bas + '" stroke="#ffffff" stroke-width="1.5" stroke-dasharray="4 3" opacity="0"/>';
+  s += '</svg>';
+  graph.innerHTML = s;
+
+  // Summary of the period
+  const total = serie.reduce((a, p) => a + p.n, 0);
+  const morceaux = ['<span>Total <b>' + lkNb(total) + '</b></span>'];
+  if (!barres) {
+    const heures = Math.max(1, (Math.min(Date.now(), fin) - debut) / LK_HEURE);
+    const parHeure = new Map();
+    D0.pts.forEach(p => { const h = Math.floor(p.t / LK_HEURE) * LK_HEURE; parHeure.set(h, (parHeure.get(h) || 0) + p.n); });
+    let pireH = null;
+    parHeure.forEach((n, t) => { if (!pireH || n > pireH.n) pireH = { t, n }; });
+    morceaux.push('<span>Average <b>' + lkNb(total / heures) + '</b> per hour</span>');
+    if (pireH && pireH.n > 0) morceaux.push('<span>Busiest hour <b>' + lkNb(pireH.n) + '</b> (' + lkJourCourt(pireH.t) + ', ' + new Date(pireH.t).getHours() + ':00)</span>');
+  } else {
+    const joursEcoules = Math.max(1, (Date.now() - debut) / LK_JOUR);
+    const top = serie.slice().sort((a, b) => b.n - a.n)[0];
+    morceaux.push('<span>Average <b>' + lkNb(total / joursEcoules) + '</b> per day</span>');
+    if (top && top.n > 0) morceaux.push('<span>Busiest day <b>' + lkNb(top.n) + '</b> (' + lkJourCourt(top.t) + ')</span>');
+  }
+  if (D0.comp) {
+    const [maint, avant] = D0.comp;
+    const nom = jours === 1 ? ['Last 24 h', 'Previous 24 h'] : ['Last ' + jours + ' days', 'Previous ' + jours + ' days'];
+    let ecart = '';
+    if (avant > 0) {
+      const pct = Math.round((maint - avant) / avant * 100);
+      ecart = ' <span class="' + (pct < 0 ? 'baisse' : pct > 0 ? 'hausse' : '') + '">(' + (pct > 0 ? '+' : pct < 0 ? '−' : '') + Math.abs(pct) + ' %)</span>';
+    }
+    morceaux.push('<span>' + nom[0] + ' <b>' + lkNb(maint) + '</b> · ' + nom[1] + ' <b>' + lkNb(avant) + '</b>' + ecart + '</span>');
+  }
+  resume.innerHTML = morceaux.join('');
+
+  // Note: no data at the start of the period (Loki may not keep older data)
+  const notes = [];
+  if (total === 0) notes.push('No ' + mot + ' over the period.');
+  else if (barres) {
+    const premier = serie.findIndex(j => j.n > 0);
+    if (premier > 0) notes.push('No data before ' + lkJourCourt(serie[premier].t) + ': Loki may not keep older data.');
+  }
+  if (D0.comp && D0.comp[1] === 0 && D0.comp[0] > 0) notes.push('No comparison possible: nothing in Loki for the period before.');
+  notes.push('Read from Loki at ' + new Date(D0.quand).toLocaleTimeString('en-CA') + ', refreshed every 5 min.');
+  note.textContent = notes.join(' ');
+  info.textContent = 'Slide over the chart to read a value';
+
+  // Reading with a finger or the mouse
+  const svg = graph.querySelector('svg');
+  const repere = svg.querySelector('.lk-repere');
+  const montrer = ev => {
+    if (!survol.length) return;
+    const r = svg.getBoundingClientRect();
+    const cx = ((ev.touches ? ev.touches[0].clientX : ev.clientX) - r.left) / r.width * W;
+    let best = survol[0];
+    survol.forEach(p => { if (Math.abs(p.x - cx) < Math.abs(best.x - cx)) best = p; });
+    repere.setAttribute('x1', best.x); repere.setAttribute('x2', best.x); repere.setAttribute('opacity', '0.8');
+    info.innerHTML = best.texte;
+  };
+  svg.addEventListener('mousemove', montrer);
+  svg.addEventListener('touchstart', montrer, { passive: true });
+  svg.addEventListener('touchmove', montrer, { passive: true });
+}
+
+function majBoutonsHisto(carte) {
+  carte.querySelectorAll('.lk-boutons button').forEach(b => b.classList.toggle('actif', Number(b.dataset.jours) === lkJours));
+}
+
+function fermerHisto() {
+  if (!lkOuverte) return;
+  const carte = $('lk-carte-' + lkOuverte);
+  if (carte) {
+    carte.classList.remove('ouverte');
+    carte.setAttribute('aria-expanded', 'false');
+    carte.querySelector('.lk-histo').hidden = true;
+    carte.querySelector('.lk-indice').textContent = 'Tap for the history';
+  }
+  lkOuverte = null;
+  clearInterval(lkMinuterie);
+}
+
+function ouvrirHisto(cle) {
+  fermerHisto();
+  const carte = $('lk-carte-' + cle);
+  if (!carte) return;
+  lkOuverte = cle;
+  carte.classList.add('ouverte');
+  carte.setAttribute('aria-expanded', 'true');
+  carte.querySelector('.lk-histo').hidden = false;
+  carte.querySelector('.lk-indice').textContent = 'Tap the icon or the title to go back';
+  majBoutonsHisto(carte);
+  chargerHisto(false);
+  lkMinuterie = setInterval(() => { if (!document.hidden) chargerHisto(true); }, LOKI_REFRESH_MS);
+}
+
+// A single listener on the section (the cards are created later by loadLoki)
+$('loki-cards').addEventListener('click', ev => {
+  const carte = ev.target.closest('.carte-lk');
+  if (!carte) return;
+  const bouton = ev.target.closest('.lk-boutons button');
+  if (bouton) {
+    lkJours = Number(bouton.dataset.jours);
+    majBoutonsHisto(carte);
+    chargerHisto(false);
+    return;
+  }
+  if (ev.target.closest('svg')) return;
+  if (!carte.classList.contains('ouverte')) { ouvrirHisto(carte.dataset.cle); return; }
+  if (ev.target.closest('i, h2, .number, .lk-indice')) fermerHisto();
+});
+$('loki-cards').addEventListener('keydown', ev => {
+  const carte = ev.target.closest('.carte-lk');
+  if (!carte || ev.target !== carte || (ev.key !== 'Enter' && ev.key !== ' ')) return;
+  ev.preventDefault();
+  if (carte.classList.contains('ouverte')) fermerHisto(); else ouvrirHisto(carte.dataset.cle);
+});
+window.addEventListener('resize', () => { if (lkOuverte && lkDonnees) dessinerHisto(); });
+
+
+
 async function loadLoki() {
   try {
     const [wan, syn, snort, h1, scanners, lignes, sigs, ifaces] = await Promise.all([
@@ -415,13 +782,7 @@ async function loadLoki() {
     if (cb) cb.onclick = () => copyText(watch.map(x => x.ip).join('\n'), cb);
 
     const actif = h1 > 0;
-    $('loki-cards').innerHTML =
-      statCard('fa-ban', 'WAN blocks', wan, 'blocked incoming connections') +
-      statCard('fa-magnifying-glass', 'SYN scans', syn, 'TCP probes on the WAN') +
-      statCard('fa-triangle-exclamation', 'Snort alerts', snort, 'over 24 hours') +
-      '<div class="card"><i class="fa-solid fa-database"></i><h2>Log reception</h2>' +
-      '<div class="vm-status"><span class="dot ' + (actif ? 'online-dot' : 'offline-dot') + '"></span>' + (actif ? 'ACTIVE' : 'STOPPED') + '</div>' +
-      '<p>' + h1.toLocaleString('en-CA') + ' logs in the last hour</p></div>';
+    majCartesLoki({ wan, syn, snort }, h1);
 
     $('loki-lists').innerHTML =
       topBox('Most active IPs', 'fa-user-secret', scanners.slice(0, 5), '#ff4d4d', false) +
@@ -435,6 +796,8 @@ async function loadLoki() {
     lokiOk = true;
   } catch (e) {
     lokiOk = false;
+    fermerHisto();
+    lkConstruites = false;
     $('loki-watch').innerHTML = '';
     $('loki-cards').innerHTML = '';
     $('loki-lists').innerHTML = '<p class="lokierr"><span class="dot offline-dot"></span>Loki unreachable (' + esc(e.message) +
