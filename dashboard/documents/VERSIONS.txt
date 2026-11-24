@@ -1,5 +1,10 @@
 VERSIONS.txt : log of every change to the dashboard (example)
 
+2026-11-24  v2026.11.24-3
+------------------------
+Site : pfsense.html, no tooltip on an open history card, abbreviated labels rounded to one
+       decimal (10.6 k), "MY HOMELAB" logo instead of "PROXMOX LAB".
+
 2026-11-24  v2026.11.24-1
 ------------------------
 Site : pfsense.html, WAN blocks, SYN scans and Snort alerts cards: tap for the history read
